@@ -34,7 +34,7 @@ The service is designed to remain observable, testable, and operationally predic
 
 Flyway manages PostgreSQL schema changes, supported by database constraints and indexes. Startup configuration is validated fail-fast. Unit tests and integration tests using real PostgreSQL through Testcontainers cover state changes, concurrency, idempotency, and recovery. A **separate** persistent mock provider is used for integration testing, including ambiguous outcomes such as an activation succeeding just before an HTTP `500`. The mock's internal design and administrative endpoints are documented in [Mock Provider](docs/MOCK.md), not as features of the main service.
 
-**Documentation links:** [SPEC.md](SPEC.md) · [AGENTS.md](AGENTS.md) · [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [CLAIM.md](docs/CLAIM.md) · [MOCK.md](docs/MOCK.md) · [SECURITY.md](docs/SECURITY.md)
+**Documentation links:** [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [CLAIM.md](docs/CLAIM.md) · [MOCK.md](docs/MOCK.md) · [SECURITY.md](docs/SECURITY.md)
 
 
 ## Build, Deploy, Run and Basic Checks
@@ -130,14 +130,14 @@ An `UP` readiness result means the service can access its PostgreSQL dependency.
 
 For functional checks, run `./scripts/dev-smoke-test.sh`. It works with either Compose or local JARs and uses `SERVICE_BASE_URL` (default `http://localhost:8080`) for the REST API and `MANAGEMENT_BASE_URL` (default `http://localhost:8081`) for readiness. The script uses the ordinary API, not direct SQL access, and produces unique example request IDs each run. When the mock has a non-happy-path configuration, consult the application logs and the mock documentation rather than assuming the smoke test will always pass.
 
-**Documentation links:** [SPEC.md](SPEC.md) · [AGENTS.md](AGENTS.md) · [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [CLAIM.md](docs/CLAIM.md) · [MOCK.md](docs/MOCK.md) · [SECURITY.md](docs/SECURITY.md)
+**Documentation links:** [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [CLAIM.md](docs/CLAIM.md) · [MOCK.md](docs/MOCK.md) · [SECURITY.md](docs/SECURITY.md)
 
 
 ## Architecture at a Glance
 
 `demoactv-service` accepts requests through a secured REST API, stores them in PostgreSQL, and processes them using independent database-backed workers. External HTTP calls occur only after durable claim commits; the provider is a separate integration boundary. This deliberately compact design is suited to the project's limited scale, with trade-offs explained in [Architecture](docs/ARCHITECTURE.md), the worker protocol in [Claim](docs/CLAIM.md), and the demonstration provider in [Mock](docs/MOCK.md).
 
-**Documentation links:** [SPEC.md](SPEC.md) · [AGENTS.md](AGENTS.md) · [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [CLAIM.md](docs/CLAIM.md) · [MOCK.md](docs/MOCK.md) · [SECURITY.md](docs/SECURITY.md)
+**Documentation links:** [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [CLAIM.md](docs/CLAIM.md) · [MOCK.md](docs/MOCK.md) · [SECURITY.md](docs/SECURITY.md)
 
 
 ## Configuration Overview
@@ -174,7 +174,7 @@ MOCK_SIMULATION_KEEP_MODIFIED_CONFIGS=false \
 
 This **does not delete** the stored JSONB configuration. On the next normal recreation without the override, the mock again prefers the saved configuration (`keep-modified-configs=true` by default). Counters and phase progress restart when the mock JVM restarts; activation and idempotency history remain in PostgreSQL.
 
-**Documentation links:** [SPEC.md](SPEC.md) · [AGENTS.md](AGENTS.md) · [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [CLAIM.md](docs/CLAIM.md) · [MOCK.md](docs/MOCK.md) · [SECURITY.md](docs/SECURITY.md)
+**Documentation links:** [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [CLAIM.md](docs/CLAIM.md) · [MOCK.md](docs/MOCK.md) · [SECURITY.md](docs/SECURITY.md)
 
 
 ## Security
@@ -219,7 +219,7 @@ The demonstration RSA key pair is stored under `.local/dev-keys/` and excluded f
 
 For external provider setup, JWT validation, key management, exposure controls, and security tests, see [Security Details](docs/SECURITY.md).
 
-**Documentation links:** [SPEC.md](SPEC.md) · [AGENTS.md](AGENTS.md) · [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [CLAIM.md](docs/CLAIM.md) · [MOCK.md](docs/MOCK.md) · [SECURITY.md](docs/SECURITY.md)
+**Documentation links:** [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [CLAIM.md](docs/CLAIM.md) · [MOCK.md](docs/MOCK.md) · [SECURITY.md](docs/SECURITY.md)
 
 
 ## Running Tests
@@ -271,7 +271,7 @@ Use the same patterns for `demoactv-mock`. JUnit tags make selections more preci
 
 The full suite will verify competing claims, lease recovery, duplicate API requests, access control, and ambiguous external responses. A particularly important test configures the mock to **activate the product but return HTTP 500**; the service retries with the same key and eventually reaches `COMPLETED` with two claimed attempts but **only one activation effect** at the provider. Details and rationale belong in [Claim](docs/CLAIM.md) and [Mock](docs/MOCK.md).
 
-**Documentation links:** [SPEC.md](SPEC.md) · [AGENTS.md](AGENTS.md) · [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [CLAIM.md](docs/CLAIM.md) · [MOCK.md](docs/MOCK.md) · [SECURITY.md](docs/SECURITY.md)
+**Documentation links:** [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [CLAIM.md](docs/CLAIM.md) · [MOCK.md](docs/MOCK.md) · [SECURITY.md](docs/SECURITY.md)
 
 
 ## Operations and Troubleshooting
@@ -300,4 +300,4 @@ docker compose down -v
 
 **This operation is irreversible.** Use it only when deliberately resetting the demonstration database. For an ordinary shutdown that preserves data, use `docker compose down` without `-v`.
 
-**Documentation links:** [SPEC.md](SPEC.md) · [AGENTS.md](AGENTS.md) · [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [CLAIM.md](docs/CLAIM.md) · [MOCK.md](docs/MOCK.md) · [SECURITY.md](docs/SECURITY.md)
+**Documentation links:** [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [CLAIM.md](docs/CLAIM.md) · [MOCK.md](docs/MOCK.md) · [SECURITY.md](docs/SECURITY.md)
