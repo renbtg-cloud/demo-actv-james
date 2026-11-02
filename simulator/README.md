@@ -98,3 +98,20 @@ The ingress simulator can now share a **single deterministic global workload** a
 ## Optional service-side instrumentation (Milestone 08)
 
 This is an **explicit evaluator opt-in**, disabled by default in Deroyque. Start the lab service with `APP_LAB_METRICS_ENABLED=1` only for comparative measurements; then capture tagged admission counters using `python3 simulator/server_metrics.py` (in the standalone package, `python3 server_metrics.py`) after all host shards complete. Pass the saved JSON to `distributed_merge.py --server-metrics`. When instrumentation is off, omit `--server-metrics`; global service-side throughput remains unknown rather than invented. Instrumentation changes the cost of request handling, so report enabled/disabled settings with each benchmark. See the integrated project's `docs/MILESTONE-08.md`.
+
+## Milestones 39–43 — Single-clock gateway witness (optional laboratory tool)
+
+Start independently managed application listeners before starting the witness.
+For a **loopback-only** example with two service JVM listeners on 18081/18082:
+
+```sh
+python3 -u simulator/ingress_witness.py --run-id lab-run-001 \
+  --backend http://127.0.0.1:18081 --backend http://127.0.0.1:18082 --port 18088
+# Point both producer shards at http://127.0.0.1:18088 with the SAME run ID.
+# Once all shards finish, capture the final snapshot; do not copy credentials:
+python3 -c 'import urllib.request; print(urllib.request.urlopen("http://127.0.0.1:18088/__witness/report").read().decode())' > witness.json
+python3 simulator/distributed_merge.py --gateway-witness witness.json \
+  simulator/results/lab-run-001-host-000 simulator/results/lab-run-001-host-001
+```
+
+**Never expose the witness directly on a network.** It binds exclusively to loopback and permits only loopback backend listeners. For distributed hosts, use authenticated encrypted tunnels and document their conditions; distinct kernel reports are still not verified physical independence. The witness forwards bearer authorization without logging it. Gateway QPS includes gateway overhead and is NOT provider effect throughput; errors, inconsistent counters and incomplete evidence block success. The real Spring Boot/SQLite acceptance is a separate GitHub CI scenario; see `docs/MILESTONE-42.md`.

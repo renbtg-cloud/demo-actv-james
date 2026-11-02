@@ -11,6 +11,19 @@ integration jobs succeeded; the JWT security job reported **0/44 failed,
 Milestones 23–30 below introduce further acceptance and evidence gates;
 these **must not be claimed as CI-passing until their own run completes**.
 
+## Milestones 39–43 — One-clock ingress witness and real distributed-workload verification
+
+An **optional loopback-only HTTP gateway observer** now distributes admissions to
+separate backend listeners and measures response completion through **one monotonic
+clock**. Global reconciliation fails closed if its counts, HTTP statuses, timing,
+transport errors or per-backend totals contradict the independent Java producer
+results. This does not measure provider-completed effects, remove gateway overhead,
+or imply physical isolation. The real Spring CI scenario independently audits
+PostgreSQL/RabbitMQ/SQLite effects, two Spring JVM counters and four real Java
+producer processes. **Real integration status is determined only by its GitHub
+Actions job**, not the local fake-backend regression. See `docs/MILESTONE-39.md`
+through `docs/MILESTONE-43.md`.
+
 ## Layout
 
 - `core/`: admission and evidence contracts, policy and safe parsing.

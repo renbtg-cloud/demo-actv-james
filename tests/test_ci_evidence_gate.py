@@ -15,13 +15,14 @@ def report(scenario):
     if scenario=='staggered-crashes':d.update(mode='boot',flyway_runtime_verified=True,engine_completed=True,adversarial={'spring_service_jvms_started':4})
     elif scenario=='jwt-security':d['signed_effect_verified']=True
     elif scenario in ('oidc-keycloak','local-keycloak'):d.update(issuer_verified=True,signed_provider_effect_verified=True)
+    elif scenario=='gateway-witness':d.update(completed=True, measurement={'global_recorded_posts':80,'global_throughput_qps':50.0,'gateway_witness':{'total_http_responses':80,'backend_count':2},'verified_states':{'DONE':20}})
     elif scenario=='same-row-contention':d.update(completed=True,business_effects=1)
     else:d['cases']=[{'case':'real'}]
     return d
 
 
 class EvidenceGateTest(unittest.TestCase):
-    def test_positive_all_nine(self):
+    def test_positive_all_scenarios(self):
         for scenario in SCENARIOS:
             with self.subTest(scenario=scenario):self.assertEqual(validate(scenario,report(scenario))['failed'],0)
 
@@ -59,6 +60,11 @@ class EvidenceGateTest(unittest.TestCase):
 
     def test_duplicate_json_fields_rejected(self):
         with self.assertRaises(ValueError):no_duplicate_json_pairs([('total',8),('total',0)])
+
+    def test_false_gateway_witness_claim_fails_closed(self):
+        data=report('gateway-witness')
+        data['measurement']['gateway_witness']['backend_count']=1
+        with self.assertRaises(ValueError):validate('gateway-witness',data)
 
     def test_boolean_not_integer(self):
         doc=report('jwt-security');doc['total']=True

@@ -13,6 +13,7 @@ from run import audit,load_records,duration_ms_to_percentile,verify
 from workload import create_plan
 from types import SimpleNamespace
 from host_provenance import evaluate_provenance
+from witness_audit import verify_witness
 
 PLAN_FIELDS=('profile','distribution','duration_seconds','seed','global_attempted_posts',
              'shared_keys','conflict_percent','target_qps','shard_count','start_at_ms',
@@ -98,7 +99,7 @@ def audit_service_snapshots(sources, run_id, records, statuses):
     return result, []
 
 
-def merge(folders,verify_state=False,await_done_seconds=0,timeout_ms=8000,token=None,server_metrics=None,require_distinct_kernels=False):
+def merge(folders,verify_state=False,await_done_seconds=0,timeout_ms=8000,token=None,server_metrics=None,require_distinct_kernels=False,gateway_witness=None):
     if not folders:raise ValueError('Supply every shard output directory')
     chunks=[];all_records=[];seen_shards=set(); errors=[];plan=None;run_id=None;target=None
     host_snapshots=[]
@@ -164,6 +165,10 @@ def merge(folders,verify_state=False,await_done_seconds=0,timeout_ms=8000,token=
     if server_metrics is not None:
         server_report, mismatch = audit_service_snapshots(server_metrics, run_id, all_records, statuses)
         errors.extend(['service metrics: '+v for v in mismatch])
+    gateway_report = None
+    if gateway_witness is not None:
+        gateway_report, witness_errors = verify_witness(gateway_witness, run_id, all_records, statuses)
+        errors.extend(["gateway witness: " + e for e in witness_errors])
     host_evidence = evaluate_provenance(host_snapshots, run_id)
     if require_distinct_kernels and host_evidence['status'] != 'DISTINCT_KERNEL_REPORTS_UNVERIFIED':
         errors.append('independent-kernel evidence required but not established: '+host_evidence['status'])
@@ -178,10 +183,13 @@ def merge(folders,verify_state=False,await_done_seconds=0,timeout_ms=8000,token=
         'global_invariant_violations':violations,'harness_errors':errors,
         'per_shard':sorted(chunks,key=lambda c:c['shard']),
         'host_evidence':host_evidence,
-        'global_throughput_qps':server_report['server_post_qps'] if server_report else None,
+        'global_throughput_qps':(gateway_report['gateway_completed_post_qps'] if gateway_report else
+                                server_report['server_post_qps'] if server_report else None),
+        'gateway_witness':gateway_report,
         'server_side':server_report,
         'global_peak_http_concurrency':None,
-        'measurement_note':'Global HTTP QPS is provided only for a fully reconciled single service JVM. Multi-JVM monotonic clock windows cannot be summed; cross-host client peak concurrency remains unmeasured.',
+        'measurement_note':('Gateway HTTP completion QPS uses one gateway monotonic clock across backend JVMs (proxy overhead included); NOT provider effects.' if gateway_report else
+            'Global HTTP QPS is provided only for a fully reconciled single service JVM. Multi-JVM monotonic clock windows cannot be summed; cross-host client peak concurrency remains unmeasured.'),
         'outcome':'FAIL' if errors or violations or state_errors or error_http else 'PASS'}
     return result
 
@@ -192,10 +200,11 @@ def main(argv=None):
     parser.add_argument('--verify-state',action='store_true')
     parser.add_argument('--await-done-seconds',type=float,default=0)
     parser.add_argument('--server-metrics',type=pathlib.Path,action='append',help='One metrics snapshot per active service JVM, captured AFTER all shards finish (repeat)')
+    parser.add_argument('--gateway-witness',type=pathlib.Path,help='Optional final loopback gateway witness JSON from ONE monotonic clock')
     parser.add_argument('--require-distinct-kernels',action='store_true',help='Fail if independent reported kernel fingerprints are not demonstrated for the producer shards')
     p=parser.parse_args(argv)
     import os
-    try:r=merge(p.folders,p.verify_state,p.await_done_seconds,token=os.environ.get('DEROYQUE_SIM_READ_TOKEN'),server_metrics=p.server_metrics,require_distinct_kernels=p.require_distinct_kernels)
+    try:r=merge(p.folders,p.verify_state,p.await_done_seconds,token=os.environ.get('DEROYQUE_SIM_READ_TOKEN'),server_metrics=p.server_metrics,require_distinct_kernels=p.require_distinct_kernels,gateway_witness=p.gateway_witness)
     except (ValueError,KeyError,OSError,json.JSONDecodeError) as e:
         print(f'DISTRIBUTED_MERGE_FATAL: {e}',file=sys.stderr);return 2
     if p.output:

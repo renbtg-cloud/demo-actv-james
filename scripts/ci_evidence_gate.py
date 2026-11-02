@@ -17,6 +17,7 @@ SCENARIOS={
     'dependency-interruptions':('spring-chaos-result.json',19),
     'late-and-contradiction':('spring-chaos-result.json',16),
     'same-row-contention':('spring-same-row-race.json',22),
+    'gateway-witness':('spring-gateway-witness.json',16),
     'jwt-security':('spring-jwt-security.json',69),
     'oidc-keycloak':('spring-keycloak-oidc.json',26),
     'local-keycloak':('spring-local-keycloak.json',26),
@@ -60,6 +61,17 @@ def validate(scenario,result):
     elif scenario in ('oidc-keycloak','local-keycloak'):
         if (result.get('issuer_verified') is not True or result.get('signed_provider_effect_verified') is not True):
             raise ValueError('genuine issuer or signed independent effect not verified')
+    elif scenario=='gateway-witness':
+        m=result.get('measurement')
+        if (result.get('completed') is not True or not isinstance(m,dict) or
+                m.get('global_recorded_posts')!=80 or
+                not isinstance(m.get('global_throughput_qps'),(int,float)) or
+                m['global_throughput_qps']<=0 or
+                not isinstance(m.get('gateway_witness'),dict) or
+                m['gateway_witness'].get('total_http_responses')!=80 or
+                m['gateway_witness'].get('backend_count')!=2 or
+                m.get('verified_states',{}).get('DONE')!=20):
+            raise ValueError('real gateway/Spring/provider end-to-end proof absent')
     elif scenario=='same-row-contention':
         if result.get('completed') is not True or result.get('business_effects')!=1:
             raise ValueError('same-row concurrent work was not proven settled once')

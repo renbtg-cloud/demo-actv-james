@@ -12,6 +12,7 @@ on:
       - 'tests/run_spring_fault_windows.py'
       - 'tests/run_spring_chaos.py'
       - 'tests/run_spring_same_row_race.py'
+      - 'tests/run_spring_gateway_witness.py'
       - 'tests/run_spring_jwt_security.py'
       - 'tests/run_spring_keycloak_oidc.py'
       - 'tests/test_local_keycloak.py'
@@ -43,6 +44,7 @@ on:
       - 'tests/run_spring_fault_windows.py'
       - 'tests/run_spring_chaos.py'
       - 'tests/run_spring_same_row_race.py'
+      - 'tests/run_spring_gateway_witness.py'
       - 'tests/run_spring_jwt_security.py'
       - 'tests/run_spring_keycloak_oidc.py'
       - 'tests/test_local_keycloak.py'
@@ -70,7 +72,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [staggered-crashes, exact-fault-windows, competing-windows, dependency-interruptions, late-and-contradiction, same-row-contention, jwt-security, oidc-keycloak, local-keycloak]
+        scenario: [staggered-crashes, exact-fault-windows, competing-windows, dependency-interruptions, late-and-contradiction, same-row-contention, jwt-security, oidc-keycloak, local-keycloak, gateway-witness]
     services:
       postgres:
         image: postgres:17
@@ -165,6 +167,10 @@ jobs:
             mvn -B -ntp -f adapter-springboot/pom.xml clean package
             python3 -u tests/run_spring_fault_windows.py --boot-jar adapter-springboot/target/deroyque-springboot-0.10.0-SNAPSHOT.jar --output "$RUNNER_TEMP/spring-fault-windows.json"
             cat "$RUNNER_TEMP/spring-fault-windows.json"
+          elif [[ "${{ matrix.scenario }}" == "gateway-witness" ]]; then
+            mvn -B -ntp -f adapter-springboot/pom.xml clean package
+            python3 -u tests/run_spring_gateway_witness.py --boot-jar adapter-springboot/target/deroyque-springboot-0.10.0-SNAPSHOT.jar --output "$RUNNER_TEMP/spring-gateway-witness.json"
+            cat "$RUNNER_TEMP/spring-gateway-witness.json"
           elif [[ "${{ matrix.scenario }}" == "same-row-contention" ]]; then
             mvn -B -ntp -f adapter-springboot/pom.xml clean package
             python3 -u tests/run_spring_same_row_race.py --boot-jar adapter-springboot/target/deroyque-springboot-0.10.0-SNAPSHOT.jar --output "$RUNNER_TEMP/spring-same-row-race.json"
