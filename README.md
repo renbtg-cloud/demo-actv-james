@@ -311,3 +311,14 @@ https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41451524902
 The offline `scripts/build.sh` path additionally needs the included lab-only SLF4J
 shim and two lab provider Java sources, plus separately provisioned PostgreSQL and
 RabbitMQ client JAR dependencies. These external JARs are not bundled.
+
+## Milestones 33–35 — Source-artifact trust boundaries
+
+The deterministic CI source archive is now format **v2**, with Git executable-mode
+integrity, a mandatory clean committed checkout and bounded, streaming ZIP
+verification. The independent CI job compares both file bytes and executable
+modes to a second Git checkout. The verifier rejects symlinks, ZIP bombs with
+excessive advertised expansion, suspicious paths and malformed metadata.
+See [M33](docs/MILESTONE-33.md), [M34](docs/MILESTONE-34.md) and
+[M35](docs/MILESTONE-35.md). These changes require a new successful CI run;
+passing offline regression tests alone does not establish CI success.
