@@ -4,7 +4,12 @@
 
 This repository contains the **actual experimental source code**, not the older documentation-only preview. The three primary deliverables are the asynchronous activation service, an independent HTTP provider simulator, and a configurable multi-JVM incoming-transaction simulator. They are developed as one evolving system.
 
-**Verified status (2 November 2026, Milestone 21):** all nine real Spring integration jobs succeeded, including a 0/31-failure (31/31-passed) JWT security suite exercising RSA JWKS rotation/outage/recovery. See [GitHub Actions run 41489419467](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41489419467). The Milestone 22 access-token hardening and JOSE attack checks are new and **not yet verified by real CI**.
+**Verified baseline (2 November 2026, Milestone 22):** all nine real Spring
+integration jobs succeeded; the JWT security job reported **0/44 failed,
+44/44 passed**, including RSA rotation, outage and JOSE attack probes. See
+[GitHub Actions run 41493502623](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41493502623).
+Milestones 23–25 below introduce additional contracts and acceptance tests;
+these **must not be claimed as CI-passing until their own run completes**.
 
 ## Layout
 
@@ -22,6 +27,26 @@ This repository contains the **actual experimental source code**, not the older 
 
 A new GitHub Actions matrix job (`oidc-keycloak`) tests the **real Spring OAuth2 Resource Server** against a disposable Keycloak authorization server. It obtains access tokens from the genuine `client_credentials` endpoint using per-run clients and realms, exercises issuer/audience/scope authorization, then verifies the durable activation through PostgreSQL, RabbitMQ and an independent SQLite provider. The real OIDC job passed **0/26 failures; 26/26 checks passed**. Combined with the seven prior real-Spring jobs, [GitHub Actions run 41469917139](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41469917139) passed **0/238 failures; 238/238 checks passed**. See `docs/MILESTONE-19.md`. This is a CI-only local HTTP development server; **it is not a production IdP deployment**.
 
+
+## Milestone 23 — Strict Unicode admission
+
+Malformed UTF-8 byte sequences and unmatched UTF-16 surrogate escapes now
+return 400 rather than becoming a replacement-character identity. Valid emoji
+surrogate pairs remain valid JSON strings. See [Milestone 23](docs/MILESTONE-23.md).
+
+## Milestone 24 — Explicit JSON charset contract
+
+Only UTF-8 JSON is supported; contradictory/malformed charset parameters and
+non-UTF-8 declarations return 415 before any database writes. See
+[Milestone 24](docs/MILESTONE-24.md).
+
+## Milestone 25 — Reject-before-side-effect HTTP regression
+
+The real Spring JWT acceptance harness verifies malformed input and denied
+routes/scope/method combinations cause no PostgreSQL admissions, including 24
+concurrent invalid requests, before the known-good signed-provider activation.
+See [Milestone 25](docs/MILESTONE-25.md).
+
 ## Milestone 21 — JWKS key rotation and issuer-outage security tests (verified)
 
 The existing `jwt-security` integration harness now exercises an actual mutable
@@ -34,7 +59,7 @@ public key disappears from JWKS: resource-server JWKS caches may retain keys
 until their TTL expires. No production key rotation is configured by this
 fixture. See `docs/MILESTONE-21.md` for the test contract and verification gate.
 
-## Milestone 22 — JWT attack vectors and bounded access-token lifetime (pending real CI)
+## Milestone 22 — JWT attack vectors and bounded access-token lifetime (verified)
 
 Spring's real JWT resource server is tested against unsigned `alg=none`,
 RSA-public-material `HS256` confusion, genuinely signed but unapproved `RS512`,

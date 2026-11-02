@@ -1,6 +1,9 @@
 package demo;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
+import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.util.Map;
 import java.util.Set;
@@ -65,13 +68,47 @@ public final class AdmissionHttpFacade {
 
   private static Reply err(int status,String message){return new Reply(status,"{\"error\":"+StrictJson.quote(message)+"}",null);}
   static boolean valid(String s,int max){return s!=null&&!s.isBlank()&&s.length()<=max&&s.chars().noneMatch(c->c<32||c==127);}
+  /** Reject ambiguous encodings and contradictory declarations at the API boundary.
+   * RFC 8259 exchanges JSON as UTF-8. A non-UTF-8 charset is not silently reinterpreted.
+   * Other media-type parameters remain permitted for compatibility, but each has
+   * to be a conventional name=value field; duplicate charset declarations fail.
+   */
+  static boolean utf8JsonContentType(String contentType){
+    if(contentType==null)return false;
+    String[] parts=contentType.split(";",-1);
+    if(!parts[0].trim().equalsIgnoreCase("application/json"))return false;
+    boolean hasCharset=false;
+    for(int i=1;i<parts.length;i++){
+      String part=parts[i].trim();int equal=part.indexOf('=');
+      if(equal<=0 || equal==part.length()-1)return false;
+      String name=part.substring(0,equal).trim();
+      String value=part.substring(equal+1).trim();
+      if(!name.matches("[A-Za-z0-9!#$%&'*+.^_`|~-]+"))return false;
+      if(name.equalsIgnoreCase("charset")){
+        if(hasCharset)return false;
+        hasCharset=true;
+        if(value.length()>=2 && value.startsWith("\"") && value.endsWith("\""))
+          value=value.substring(1,value.length()-1);
+        if(!value.equalsIgnoreCase("UTF-8"))return false;
+      }
+    }
+    return true;
+  }
+  private static String decodeUtf8(byte[] body){
+    try {
+      return StandardCharsets.UTF_8.newDecoder()
+        .onMalformedInput(CodingErrorAction.REPORT)
+        .onUnmappableCharacter(CodingErrorAction.REPORT)
+        .decode(ByteBuffer.wrap(body)).toString();
+    } catch(CharacterCodingException invalid){throw new IllegalArgumentException("invalid UTF-8",invalid);}
+  }
   public Reply create(String authorization,String contentType,byte[] body,String run){
     if(!allowed(authorization,true))return err(401,"UNAUTHORIZED");
-    if(contentType==null||!contentType.split(";",2)[0].trim().equalsIgnoreCase("application/json"))return err(415,"UNSUPPORTED_MEDIA_TYPE");
+    if(!utf8JsonContentType(contentType))return err(415,"UNSUPPORTED_MEDIA_TYPE");
     if(body==null)return err(400,"INVALID_JSON");
     if(body.length>4096)return err(413,"BODY_TOO_LARGE");
     Map<String,String> input;
-    try {input=StrictJson.parse(new String(body,StandardCharsets.UTF_8));}
+    try {input=StrictJson.parse(decodeUtf8(body));}
     catch(IllegalArgumentException ex){return err(400,"INVALID_JSON");}
     if(!input.keySet().equals(Set.of("externalId","customerId","productCode"))||
       !valid(input.get("externalId"),100)||!valid(input.get("customerId"),100)||!valid(input.get("productCode"),100))

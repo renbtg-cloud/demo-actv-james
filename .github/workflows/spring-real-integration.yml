@@ -17,6 +17,7 @@ on:
       - 'tests/test_local_keycloak.py'
       - 'tests/test_jwks_rotation_fixture.py'
       - 'tests/test_jwt_adversarial_vectors.py'
+      - 'tests/java/demo/AdmissionHttpFacadeContract.java'
       - 'tests/jwt_adversarial_vectors.py'
       - 'tests/jwks_rotation_fixture.py'
       - 'scripts/local_keycloak.py'
@@ -40,6 +41,7 @@ on:
       - 'tests/test_local_keycloak.py'
       - 'tests/test_jwks_rotation_fixture.py'
       - 'tests/test_jwt_adversarial_vectors.py'
+      - 'tests/java/demo/AdmissionHttpFacadeContract.java'
       - 'tests/jwt_adversarial_vectors.py'
       - 'tests/jwks_rotation_fixture.py'
       - 'scripts/local_keycloak.py'
@@ -118,6 +120,11 @@ jobs:
           elif [[ "${{ matrix.scenario }}" == "jwt-security" ]]; then
             python3 -m unittest discover -s tests -p test_jwks_rotation_fixture.py -v
             python3 -m unittest discover -s tests -p test_jwt_adversarial_vectors.py -v
+            mkdir -p "$RUNNER_TEMP/deroyque-core-contract"
+            javac --release 21 -encoding UTF-8 -d "$RUNNER_TEMP/deroyque-core-contract" \
+              core/src/main/java/demo/{RequestOperations,IngressMeasurements,StrictJson,AdmissionHttpFacade}.java \
+              tests/java/demo/AdmissionHttpFacadeContract.java
+            java -cp "$RUNNER_TEMP/deroyque-core-contract" demo.AdmissionHttpFacadeContract
             mvn -B -ntp -f adapter-springboot/pom.xml clean package
             python3 -u tests/run_spring_jwt_security.py --boot-jar adapter-springboot/target/deroyque-springboot-0.10.0-SNAPSHOT.jar --output "$RUNNER_TEMP/spring-jwt-security.json"
             cat "$RUNNER_TEMP/spring-jwt-security.json"

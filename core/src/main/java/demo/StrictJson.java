@@ -31,7 +31,7 @@ final class StrictJson {
     ws();must('"');StringBuilder b=new StringBuilder();
     while(i<s.length()){
       char c=s.charAt(i++);
-      if(c=='"')return b.toString();
+      if(c=='"')return validScalars(b.toString());
       if(c<0x20)throw new IllegalArgumentException("control char");
       if(c!='\\'){b.append(c);continue;}
       if(i>=s.length())break;
@@ -49,6 +49,23 @@ final class StrictJson {
       }
     }
     throw new IllegalArgumentException("unterminated string");
+  }
+  /** JSON escapes must encode Unicode scalar values. A lone UTF-16 surrogate
+   * cannot be faithfully persisted as UTF-8 and must not become an ambiguous ID.
+   * Valid high+low pairs represent one supplementary scalar and remain valid.
+   */
+  private static String validScalars(String value){
+    for(int n=0;n<value.length();n++){
+      char c=value.charAt(n);
+      if(Character.isHighSurrogate(c)){
+        if(n+1==value.length() || !Character.isLowSurrogate(value.charAt(n+1)))
+          throw new IllegalArgumentException("unpaired high surrogate");
+        n++;
+      } else if(Character.isLowSurrogate(c)){
+        throw new IllegalArgumentException("unpaired low surrogate");
+      }
+    }
+    return value;
   }
   static String quote(String s){
     StringBuilder b=new StringBuilder("\"");

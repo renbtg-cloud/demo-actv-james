@@ -80,6 +80,20 @@ def http(method,path,auth=None,payload=None,timeout=5):
             return r.status,r.read().decode(),dict(r.headers)
     except urllib.error.HTTPError as e:return e.code,e.read().decode(),dict(e.headers)
 
+def raw_http(method,path,auth=None,body=b'',content_type='application/json',timeout=5):
+    """Send unmodified bytes to real Spring; urllib JSON convenience encoding
+    must not disguise invalid UTF-8 or change Content-Type parameters.
+    """
+    headers={'Content-Type':content_type}
+    if auth is not None:headers['Authorization']='Bearer '+auth
+    req=urllib.request.Request(f'http://127.0.0.1:{app_port}'+path,
+                                data=body,method=method,headers=headers)
+    try:
+        with urllib.request.urlopen(req,timeout=timeout) as r:
+            return r.status,r.read(),dict(r.headers)
+    except urllib.error.HTTPError as e:
+        return e.code,e.read(),dict(e.headers)
+
 def provider_effects():
     with sqlite3.connect(directory/'provider.sqlite3',timeout=10) as c:
         return c.execute('SELECT count(*) FROM effect WHERE key=?',(key,)).fetchone()[0]
@@ -188,6 +202,45 @@ def run():
           'valid read-scope JWT reaches application lookup')
     check(http('GET','/api/v1/lab/ingress-metrics?run=test',auth=real_read)[0]==403,
           'lab-only metrics endpoint denied in JWT mode')
+
+    # Milestone 23/24: verify the actual Spring HTTP bytes -> shared parser.
+    # Each rejected request uses a distinct external ID so a hidden write
+    # cannot be concealed by replay; database-count checks follow below.
+    invalid_cases=[
+        (b'\xc3\x28', 'application/json',400,'malformed UTF-8 bytes'),
+        (b'\xed\xa0\x80', 'application/json',400,'encoded UTF-8 surrogate'),
+        (b'{"externalId":"\\uD800","customerId":"a","productCode":"b"}', 'application/json',400,'unpaired high Unicode escape'),
+        (b'{"externalId":"\\uDC00","customerId":"a","productCode":"b"}', 'application/json',400,'unpaired low Unicode escape'),
+        (b'{"externalId":"bad-charset","customerId":"a","productCode":"b"}', 'application/json; charset=ISO-8859-1',415,'non-UTF-8 declared charset'),
+        (b'{"externalId":"double-charset","customerId":"a","productCode":"b"}', 'application/json; charset=UTF-8; charset=ISO-8859-1',415,'duplicate conflicting charset'),
+        (b'{"externalId":"empty-charset","customerId":"a","productCode":"b"}', 'application/json; charset=',415,'empty charset'),
+        (b'{"externalId":"too-big","customerId":"a","productCode":"b"}' + b' '*4097, 'application/json',413,'oversized raw request body'),
+    ]
+    for bytes_payload,media,expected,name in invalid_cases:
+        status,_,_=raw_http('POST','/api/v1/requests',real_write,bytes_payload,media)
+        check(status==expected, 'real Spring input boundary rejects '+name+' with '+str(expected))
+    check(sql('SELECT count(*) FROM '+schema+'.p9_requests')=='0',
+          'malformed and unsupported-content requests created zero PostgreSQL records')
+    check(http('POST','/api/v1/health/liveness',auth=real_write,payload={})[0]==403,
+          'non-GET health route denied even to legitimate writer')
+    check(http('GET','/actuator/health',auth=real_read)[0]==403,
+          'Actuator diagnostics not reachable with ordinary read authority')
+    check(http('GET','/api/v1/requests',auth=real_read)[0]==403,
+          'unlisted collection-read API denied by explicit route allowlist')
+    check(http('POST','/api/v1/requests',auth=real_read,payload={})[0]==403,
+          'read authority rejected by security filter before malformed payload handling')
+    check(sql('SELECT count(*) FROM '+schema+'.p9_requests')=='0',
+          'denied method, route and scope permutations created zero persisted requests')
+    # Stress malformed inputs concurrently; protect the ledger and bound failures
+    # rather than using sequential-only parser checks as concurrency evidence.
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results=list(pool.map(lambda item: raw_http('POST','/api/v1/requests',real_write,item[0],item[1])[0],
+                              invalid_cases*3))
+    check(len(results)==24 and all(results[i]==invalid_cases[i%8][2] for i in range(24)),
+          '24 concurrent malformed/unsupported raw HTTP requests receive exact rejection statuses')
+    check(sql('SELECT count(*) FROM '+schema+'.p9_requests')=='0',
+          'concurrent malformed HTTP requests still create no durable admissions')
+
     payload={'externalId':key,'customerId':'customer-jwt-ci','productCode':'basic'}
     status,body,headers=http('POST','/api/v1/requests',auth=real_write,payload=payload)
     rid=json.loads(body).get('id') if status==202 else None

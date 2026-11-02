@@ -40,14 +40,39 @@ public final class AdmissionHttpFacadeContract {
     check(f.create("Bearer "+WRITE,"text/plain",input,null).status()==415,"content type rejected");
     check(f.create("Bearer "+WRITE,"application/json",new byte[4097],null).status()==413,"oversized body rejected");
     check(f.create("Bearer "+WRITE,"application/json","not json".getBytes(),null).status()==400,"malformed JSON rejected");
+    check(f.create("Bearer "+WRITE,"application/json",new byte[]{(byte)0xc3,(byte)0x28},null).status()==400,
+          "malformed UTF-8 sequence rejected without replacement");
+    check(f.create("Bearer "+WRITE,"application/json",new byte[]{(byte)0xed,(byte)0xa0,(byte)0x80},null).status()==400,
+          "UTF-8 surrogate encoding rejected");
+    check(f.create("Bearer "+WRITE,"application/json",body("\\uD800", "A", "B"),null).status()==400,
+          "lone high-surrogate JSON escape rejected");
+    check(f.create("Bearer "+WRITE,"application/json",body("\\uDC00", "A", "B"),null).status()==400,
+          "lone low-surrogate JSON escape rejected");
+    check(f.create("Bearer "+WRITE,"application/json",body("\\uD800\\u0041", "A", "B"),null).status()==400,
+          "high surrogate followed by ordinary character rejected");
+    check(f.create("Bearer "+WRITE,"application/json",body("\\uD83D\\uDE80", "A", "B"),null).status()==202,
+          "valid supplementary Unicode scalar from escape pair accepted");
+    check(f.create("Bearer "+WRITE,"application/json; charset=UTF-8",body("ct-utf8","A","B"),null).status()==202,
+          "UTF-8 charset accepted");
+    check(f.create("Bearer "+WRITE,"application/json; charset=\"utf-8\"",body("ct-quoted","A","B"),null).status()==202,
+          "quoted UTF-8 charset accepted");
+    check(f.create("Bearer "+WRITE,"application/json; charset=ISO-8859-1",body("ct-reject","A","B"),null).status()==415,
+          "non-UTF-8 charset rejected");
+    check(f.create("Bearer "+WRITE,"application/json; charset=utf-8; charset=iso-8859-1",body("ct-duplicate","A","B"),null).status()==415,
+          "conflicting charset declarations rejected");
+    check(f.create("Bearer "+WRITE,"application/json; charset=",body("ct-empty","A","B"),null).status()==415,
+          "empty charset declaration rejected");
+    check(f.create("Bearer "+WRITE,"application/json; profile=v1",body("ct-profile","A","B"),null).status()==202,
+          "well-formed unrelated media-type parameter preserves compatibility");
+
     check(f.create("Bearer "+WRITE,"application/json","{\"externalId\":\"x\",\"externalId\":\"x\"}".getBytes(),null).status()==400,"duplicate JSON keys rejected");
     check(f.create("Bearer "+WRITE,"application/json","{}".getBytes(),null).status()==400,"missing request properties rejected");
     check(f.create("Bearer "+WRITE,"application/json",input,null).status()==202,"creation maps to 202");
-    check(db.creates.get()==1,"single durable admission observed");
+    check(db.creates.get()==5,"five durable admissions after Unicode and charset checks");
     var replay=f.create("Bearer "+WRITE,"application/json",input,null);
     check(replay.status()==200&&replay.json().contains("\"idempotentReplay\":true"),"replay response maps to 200");
     check(f.create("Bearer "+WRITE,"application/json",body("same-key","C","B"),null).status()==409,"conflict maps to 409");
-    check(db.creates.get()==1,"conflict creates no new record");
+    check(db.creates.get()==5,"conflict creates no new record");
     String id=db.data.get("same-key").id();
     check(f.find("Bearer "+READ,id).status()==200,"read endpoint returns detail");
     check(f.find("Bearer "+READ,id).json().contains("\"status\":\"READY\""),"detail maps state");
@@ -81,7 +106,7 @@ public final class AdmissionHttpFacadeContract {
       check(created==1,"64 concurrent admissions have exactly one winner");
       check(replayed==63,"remaining 63 arrivals idempotently replay");
     }
-    check(db.creates.get()==3,"concurrent run added exactly one durable request");
+    check(db.creates.get()==7,"concurrent run added exactly one durable request after Unicode and media-type admissions");
     System.out.println("RESULT FAILURES "+failures+"/"+checks+" PASSED "+(checks-failures)+"/"+checks);
     if(failures!=0)System.exit(1);
   }
