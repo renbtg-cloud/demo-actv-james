@@ -118,3 +118,7 @@ The incident tests survival of process loss during concurrent requests. It
 **does not establish** that every killed JVM was between an external provider
 side effect and local persistence at the instant of the kill. No claim of
 unconditional external exactly-once delivery is made.
+
+## Milestone 16 — Adversarial integration (CI)
+
+The GitHub Actions matrix now includes real Spring Boot **competing recovery**, bounded PostgreSQL/RabbitMQ container interruptions and intentionally contradictory signed issuer claims. For methodology, failure semantics and precise limitations, see [Milestone 16](docs/MILESTONE-16.md). No success is claimed before the individual GitHub Actions jobs complete.

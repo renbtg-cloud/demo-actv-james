@@ -10,6 +10,7 @@ on:
       - 'runtime-rabbit/**'
       - 'tests/run_spring_live_acceptance.py'
       - 'tests/run_spring_fault_windows.py'
+      - 'tests/run_spring_chaos.py'
       - 'simulator/**'
       - 'provider/**'
       - 'scripts/test-spring-real.sh'
@@ -23,6 +24,7 @@ on:
       - 'runtime-rabbit/**'
       - 'tests/run_spring_live_acceptance.py'
       - 'tests/run_spring_fault_windows.py'
+      - 'tests/run_spring_chaos.py'
       - 'simulator/**'
       - 'provider/**'
       - 'scripts/test-spring-real.sh'
@@ -34,7 +36,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [staggered-crashes, exact-fault-windows]
+        scenario: [staggered-crashes, exact-fault-windows, competing-windows, dependency-interruptions, late-and-contradiction]
     services:
       postgres:
         image: postgres:17
@@ -89,9 +91,15 @@ jobs:
           if [[ "${{ matrix.scenario }}" == "staggered-crashes" ]]; then
             ./scripts/test-spring-real.sh --adversarial-max-jvms 24 --adversarial-service-jvms 4 --adversarial-crashes 2 --output "$RUNNER_TEMP/spring-real-result.json"
             cat "$RUNNER_TEMP/spring-real-result.json"
-          else
+          elif [[ "${{ matrix.scenario }}" == "exact-fault-windows" ]]; then
             mvn -B -ntp -f adapter-springboot/pom.xml clean package
             python3 -u tests/run_spring_fault_windows.py --boot-jar adapter-springboot/target/deroyque-springboot-0.10.0-SNAPSHOT.jar --output "$RUNNER_TEMP/spring-fault-windows.json"
             cat "$RUNNER_TEMP/spring-fault-windows.json"
+          else
+            mvn -B -ntp -f adapter-springboot/pom.xml clean package
+            export DEROYQUE_CHAOS_PG_JAR="$(find "$HOME/.m2/repository/org/postgresql/postgresql" -name 'postgresql-*.jar' | head -1)"
+            test -f "$DEROYQUE_CHAOS_PG_JAR"
+            python3 -u tests/run_spring_chaos.py --scenario "${{ matrix.scenario }}" --boot-jar adapter-springboot/target/deroyque-springboot-0.10.0-SNAPSHOT.jar --output "$RUNNER_TEMP/spring-chaos-result.json"
+            cat "$RUNNER_TEMP/spring-chaos-result.json"
           fi
       # No raw JVM/provider logs, database dumps, keys, or credentials are uploaded.
