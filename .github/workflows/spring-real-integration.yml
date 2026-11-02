@@ -11,6 +11,7 @@ on:
       - 'tests/run_spring_live_acceptance.py'
       - 'tests/run_spring_fault_windows.py'
       - 'tests/run_spring_chaos.py'
+      - 'tests/run_spring_same_row_race.py'
       - 'simulator/**'
       - 'provider/**'
       - 'scripts/test-spring-real.sh'
@@ -25,6 +26,7 @@ on:
       - 'tests/run_spring_live_acceptance.py'
       - 'tests/run_spring_fault_windows.py'
       - 'tests/run_spring_chaos.py'
+      - 'tests/run_spring_same_row_race.py'
       - 'simulator/**'
       - 'provider/**'
       - 'scripts/test-spring-real.sh'
@@ -36,7 +38,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [staggered-crashes, exact-fault-windows, competing-windows, dependency-interruptions, late-and-contradiction]
+        scenario: [staggered-crashes, exact-fault-windows, competing-windows, dependency-interruptions, late-and-contradiction, same-row-contention]
     services:
       postgres:
         image: postgres:17
@@ -74,7 +76,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y postgresql-client
-          python -m pip install 'cryptography>=42,<50'
+          python -m pip install 'cryptography>=42,<50' 'pika==1.3.2'
       - name: Build and test real Spring Boot — ${{ matrix.scenario }}
         env:
           DEROYQUE_PSQL: psql
@@ -95,6 +97,10 @@ jobs:
             mvn -B -ntp -f adapter-springboot/pom.xml clean package
             python3 -u tests/run_spring_fault_windows.py --boot-jar adapter-springboot/target/deroyque-springboot-0.10.0-SNAPSHOT.jar --output "$RUNNER_TEMP/spring-fault-windows.json"
             cat "$RUNNER_TEMP/spring-fault-windows.json"
+          elif [[ "${{ matrix.scenario }}" == "same-row-contention" ]]; then
+            mvn -B -ntp -f adapter-springboot/pom.xml clean package
+            python3 -u tests/run_spring_same_row_race.py --boot-jar adapter-springboot/target/deroyque-springboot-0.10.0-SNAPSHOT.jar --output "$RUNNER_TEMP/spring-same-row-race.json"
+            cat "$RUNNER_TEMP/spring-same-row-race.json"
           else
             mvn -B -ntp -f adapter-springboot/pom.xml clean package
             export DEROYQUE_CHAOS_PG_JAR="$(find "$HOME/.m2/repository/org/postgresql/postgresql" -name 'postgresql-*.jar' | head -1)"

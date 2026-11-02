@@ -4,7 +4,7 @@
 
 This repository contains the **actual experimental source code**, not the older documentation-only preview. The three primary deliverables are the asynchronous activation service, an independent HTTP provider simulator, and a configurable multi-JVM incoming-transaction simulator. They are developed as one evolving system.
 
-**Status (2 November 2026):** the Java 21 JDBC/RabbitMQ engine and the legacy JDK HTTP adapter have been exercised with real PostgreSQL, RabbitMQ and an independent SQLite-backed mock provider. A Spring Boot adapter, Flyway V1/V2 migrations and real-runtime acceptance harness are present, but a successful Spring Boot startup and integration test are **not yet established** until GitHub Actions completes.
+**Status (2 November 2026):** the Java 21 JDBC/RabbitMQ engine and the legacy JDK HTTP adapter have been exercised with real PostgreSQL, RabbitMQ and an independent SQLite-backed mock provider. The real Spring Boot 4.1.2 service, Flyway V1/V2 and five adversarial CI scenarios were verified in GitHub Actions in Milestone 16. Milestone 17 adds a stronger same-row claim-contention experiment; see its versioned notes for verification status.
 
 ## Layout
 
@@ -122,3 +122,15 @@ unconditional external exactly-once delivery is made.
 ## Milestone 16 — Adversarial integration (CI)
 
 The GitHub Actions matrix now includes real Spring Boot **competing recovery**, bounded PostgreSQL/RabbitMQ container interruptions and intentionally contradictory signed issuer claims. For methodology, failure semantics and precise limitations, see [Milestone 16](docs/MILESTONE-16.md). No success is claimed before the individual GitHub Actions jobs complete.
+
+
+## Same-row contention acceptance (Milestone 17)
+
+`tests/run_spring_same_row_race.py` drives four **independent real Spring Boot** consumer JVMs
+onto a single PostgreSQL `READY` request while another PostgreSQL transaction holds
+that **same row lock**. It publishes durable duplicate hints on RabbitMQ, records
+which JVMs entered before lock release, then audits the winning commit, losing
+claims, signed proof, settlement and independent provider effect. The new
+`P21_TRACE_CLAIM_RACE=1` diagnostic is opt-in and does not gate production behavior.
+The test seeds this specific internal request directly, without an outbox, so it
+does **not** claim to re-test HTTP admission. See `docs/MILESTONE-17.md`.

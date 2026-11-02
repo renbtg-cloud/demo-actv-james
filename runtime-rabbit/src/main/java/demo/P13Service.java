@@ -179,12 +179,20 @@ public final class P13Service {
   }
   void handle(String rid)throws Exception{
     Row row=load(rid);if(row==null){System.err.println("P13_UNKNOWN_HINT rid="+rid);return;}
+    // Opt-in laboratory trace. A marker before adoptProof demonstrates that a real
+    // consumer entered the SAME durable request while an external PG row lock is held.
+    // No filesystem or test rendezvous belongs in the service's claim algorithm.
+    final boolean traceRace="1".equals(System.getenv("P21_TRACE_CLAIM_RACE"));
+    if(traceRace && ("READY".equals(row.stage())||"WAITING".equals(row.stage())))
+      System.out.println("P21_RACE_ENTER rid="+rid+" instance="+instance+" ver="+row.ver());
     var adopted=ledger.adoptProof(rid);
     if(adopted==JdbcRabbitLedger.Outcome.COMMITTED||adopted==JdbcRabbitLedger.Outcome.ALREADY||adopted==JdbcRabbitLedger.Outcome.CONFLICT)return;
     long ms=now();
     if(!Set.of("READY","WAITING").contains(row.stage()) || row.due()>ms)return;
     String owner=UUID.randomUUID().toString();
-    if(ledger.acquire(rid,row.ver(),owner,ms,4500)!=JdbcRabbitLedger.Outcome.COMMITTED)return;
+    var claim=ledger.acquire(rid,row.ver(),owner,ms,4500);
+    if(traceRace)System.out.println("P21_RACE_ACQUIRE rid="+rid+" instance="+instance+" result="+claim);
+    if(claim!=JdbcRabbitLedger.Outcome.COMMITTED)return;
     String did=UUID.randomUUID().toString();
     var authorized=ledger.authorize(rid,owner,row.ver()+1,did,now(),3,"none");
     if(authorized!=JdbcRabbitLedger.Outcome.COMMITTED)return;
