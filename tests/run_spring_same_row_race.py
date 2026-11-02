@@ -63,7 +63,10 @@ def http(port,path,token=None):
  headers={'Authorization':'Bearer '+token} if token else {}
  try:
   with urllib.request.urlopen(urllib.request.Request(f'http://127.0.0.1:{port}'+path,headers=headers),timeout=2) as r:
-   return r.status,json.loads(r.read().decode())
+   raw=r.read().decode()
+   try:payload=json.loads(raw)
+   except ValueError:payload={}
+   return r.status,payload
  except urllib.error.HTTPError as e:return e.code,{}
 
 def body_stats():
