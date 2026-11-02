@@ -99,6 +99,50 @@ The ingress simulator can now share a **single deterministic global workload** a
 
 This is an **explicit evaluator opt-in**, disabled by default in Deroyque. Start the lab service with `APP_LAB_METRICS_ENABLED=1` only for comparative measurements; then capture tagged admission counters using `python3 simulator/server_metrics.py` (in the standalone package, `python3 server_metrics.py`) after all host shards complete. Pass the saved JSON to `distributed_merge.py --server-metrics`. When instrumentation is off, omit `--server-metrics`; global service-side throughput remains unknown rather than invented. Instrumentation changes the cost of request handling, so report enabled/disabled settings with each benchmark. See the integrated project's `docs/MILESTONE-08.md`.
 
+## Multi-host launch integrity and bounded clock preparation (Milestones 72–77)
+
+The following steps are for an **authorized** lab with separately managed hosts;
+they do not create remote machines or make remote access secure for you.
+
+1. Prepare a single launch plan on the trusted collector, e.g.:
+   `python3 simulator/distributed_prepare.py --url https://authorized.example --shards 2 --jvms-per-host 4 --requests 160 --keys 40 --run-id multi-demo --output-dir /private/launch-multi-demo`.
+   Keep `manifest.json` and the launch scripts in a collector-controlled directory.
+   Transfer the appropriate launcher to each authorized host over an authenticated
+   channel, and provision `DEROYQUE_SIM_WRITE_TOKEN` securely on that host.
+2. Coordinate UTC across hosts with trusted time synchronization. For additional
+   *bounded* offset evidence, start `python3 simulator/clock_probe.py serve --port 18193`
+   on the collector and create a separate authenticated SSH tunnel to its loopback
+   port on every producer. On each host run `python3 simulator/clock_probe.py probe
+   --url http://127.0.0.1:18193/clock --run-id multi-demo --reference-id collector-A
+   --shard-index N --output clock-N.json` with N equal to its shard index. The
+   collector runs `clock_probe.py collect --run-id multi-demo --reference-id collector-A
+   --output clock-all.json clock-0.json clock-1.json`. The probe's HTTP URL is local
+   **only because the remote hop has already been secured outside this program**.
+3. Run the prepared per-host scripts; transfer their complete result folders to a
+   trusted collector. Before modifying any results, run
+   `python3 simulator/distributed_integrity.py --seal --index /private/multi-demo-index.json
+   simulator/results/multi-demo-host-000 simulator/results/multi-demo-host-001`.
+   Secure the digest index separately. The index proves integrity relative to what
+   was collected and sealed, not that producers were honest.
+4. Verify launcher digests with `distributed_integrity.verify_launch_scripts()`
+   in the collector and reconcile with:
+
+```sh
+python3 simulator/distributed_merge.py \
+  --launch-manifest /private/launch-multi-demo/manifest.json \
+  --evidence-index /private/multi-demo-index.json \
+  --clock-evidence /private/clock-all.json \
+  --require-distinct-kernels --strict-external-preflight \
+  --verify-state --output /private/multi-demo-merged.json \
+  simulator/results/multi-demo-host-000 simulator/results/multi-demo-host-001
+```
+
+No component here establishes authenticated machine identity, verifies SSH tunnel
+configuration, or guarantees clocks remain stable for an entire run. The merge
+will not invent cross-host peak concurrency, physical independence or provider
+completion throughput from these fields. Execute the full physically separated
+campaign only after host provenance and monitoring are independently verified.
+
 ## Milestones 39–43 — Single-clock gateway witness (optional laboratory tool)
 
 Start independently managed application listeners before starting the witness.

@@ -39,6 +39,24 @@ regressions. The bounds are about the observed SQL state and include the cost of
 polling, not per-request provider latency or a production SLO. See
 `docs/MILESTONE-67.md` through `docs/MILESTONE-69.md`.
 
+## Milestones 72–77 — Multi-host experiment integrity and clock readiness
+
+The distributed simulator now supports a deterministic **schema-v2 launch manifest**
+with SHA-256 launcher checksums, an independently retained per-shard evidence
+inventory, mathematically bounded four-timestamp clock-offset probes and strict
+collector preflight. Shards are bound to their declared index regardless of
+upload order. The clock reference binds to loopback; producers on other hosts
+must use an authenticated encrypted tunnel and separately verify host ownership.
+
+`--strict-external-preflight` requires all evidence inputs and distinct reported
+kernel fingerprints. A pass is **NOT proof of independent physical machines**:
+self-reported kernel metadata and unsigned SHA-256 inventories do not provide
+trusted host identity. No experiment between separate remote hosts is asserted
+by this milestone. The independent-host campaign remains an external acceptance
+gate. See `docs/MILESTONE-72.md` through `docs/MILESTONE-77.md` and the simulator
+README for workflow and limitations. The new CI must pass before these tests are
+considered remotely validated.
+
 ## Milestones 39–43 — One-clock ingress witness and real distributed-workload verification
 
 An **optional loopback-only HTTP gateway observer** now distributes admissions to

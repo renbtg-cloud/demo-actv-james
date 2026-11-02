@@ -15,6 +15,8 @@ from workload import create_plan
 from types import SimpleNamespace
 from host_provenance import evaluate_provenance
 from witness_audit import verify_witness
+from distributed_integrity import verify_launch, verify_seal, ordered_shard_folders
+from clock_bounds import audit_clock_probes
 
 PLAN_FIELDS=('profile','distribution','duration_seconds','seed','global_attempted_posts',
              'shared_keys','conflict_percent','target_qps','shard_count','start_at_ms',
@@ -100,8 +102,12 @@ def audit_service_snapshots(sources, run_id, records, statuses):
     return result, []
 
 
-def merge(folders,verify_state=False,await_done_seconds=0,timeout_ms=8000,token=None,server_metrics=None,require_distinct_kernels=False,gateway_witness=None):
+def merge(folders,verify_state=False,await_done_seconds=0,timeout_ms=8000,token=None,server_metrics=None,require_distinct_kernels=False,gateway_witness=None,launch_manifest=None,evidence_index=None,clock_evidence=None,max_clock_width_ms=100):
     if not folders:raise ValueError('Supply every shard output directory')
+    # Input order is not a host identifier. Canonicalize before reading per-host
+    # records, provenance or positional evidence digests.
+    if len(folders) >= 2:
+        folders = ordered_shard_folders(folders)
     chunks=[];all_records=[];seen_shards=set(); errors=[];plan=None;run_id=None;target=None
     host_snapshots=[]
     for folder in folders:
@@ -135,6 +141,17 @@ def merge(folders,verify_state=False,await_done_seconds=0,timeout_ms=8000,token=
                        'max_local_inflight':data['observed'].get('peak_inflight_http'),
                        'max_local_active_jvms':data['observed'].get('peak_jvms_with_inflight_http'),
                        'outcome':data['outcome']})
+    if launch_manifest is not None:
+        summaries=[json.loads((pathlib.Path(folder)/'summary.json').read_text(encoding='utf-8')) for folder in folders]
+        # Strict launch binding uses index-ordered shard summaries, not user path order.
+        indexed={s['plan']['shard_index']:s for s in summaries}
+        if set(indexed)!=set(range(plan['shard_count'])):
+            errors.append('launch binding requires complete shard indices')
+        else:
+            errors.extend('launch manifest: '+error for error in
+                          verify_launch(launch_manifest,[indexed[i] for i in range(plan['shard_count'])]))
+    if evidence_index is not None:
+        errors.extend('sealed evidence: '+error for error in verify_seal(evidence_index,folders))
     if seen_shards!=set(range(plan['shard_count'])):
         errors.append(f'Missing shard indices: {sorted(set(range(plan["shard_count"]))-seen_shards)}')
     seqs=[r['sequence'] for r in all_records]
@@ -173,6 +190,17 @@ def merge(folders,verify_state=False,await_done_seconds=0,timeout_ms=8000,token=
     host_evidence = evaluate_provenance(host_snapshots, run_id)
     if require_distinct_kernels and host_evidence['status'] != 'DISTINCT_KERNEL_REPORTS_UNVERIFIED':
         errors.append('independent-kernel evidence required but not established: '+host_evidence['status'])
+    clock_report = None
+    if clock_evidence is not None:
+        try:
+            path = pathlib.Path(clock_evidence)
+            if path.stat().st_size > 2 * 1024 * 1024:
+                raise ValueError('Oversized clock evidence')
+            document = json.loads(path.read_text(encoding='utf-8'))
+            clock_report, clock_errors = audit_clock_probes(document,run_id,plan['shard_count'],max_clock_width_ms)
+            errors.extend('clock evidence: '+err for err in clock_errors)
+        except (ValueError,KeyError,TypeError,OSError,json.JSONDecodeError) as exc:
+            errors.append('clock evidence: '+str(exc))
     # Stable workload identity across repetitions (exclude absolute UTC launch barrier).
     # This does not by itself prove identical hardware or runtime configuration.
     workload_spec={k:plan.get(k) for k in PLAN_FIELDS if k!='start_at_ms'}
@@ -190,7 +218,7 @@ def merge(folders,verify_state=False,await_done_seconds=0,timeout_ms=8000,token=
         'winning_variants':{str(slot):variant for slot,variant in sorted(winner.items())},
         'global_invariant_violations':violations,'harness_errors':errors,
         'per_shard':sorted(chunks,key=lambda c:c['shard']),
-        'host_evidence':host_evidence,
+        'host_evidence':host_evidence, 'clock_evidence':clock_report,
         'global_throughput_qps':(gateway_report['gateway_completed_post_qps'] if gateway_report else
                                 server_report['server_post_qps'] if server_report else None),
         'gateway_witness':gateway_report,
@@ -201,6 +229,25 @@ def merge(folders,verify_state=False,await_done_seconds=0,timeout_ms=8000,token=
         'outcome':'FAIL' if errors or violations or state_errors or error_http else 'PASS'}
     return result
 
+def strict_external_preflight(launch_manifest=None, evidence_index=None, clock_evidence=None,
+                              require_distinct_kernels=False):
+    """Require the three independent collection inputs, never attest host hardware.
+
+    Even a full pass is *collector evidence only*: untrusted producers can forge
+    self-reported host/kernel fields, and SHA-256 does not authenticate authors.
+    """
+    errors = []
+    if launch_manifest is None:
+        errors.append('Missing independently retained launch manifest')
+    if evidence_index is None:
+        errors.append('Missing independently retained shard SHA256 evidence index')
+    if clock_evidence is None:
+        errors.append('Missing collected clock offset evidence')
+    if not require_distinct_kernels:
+        errors.append('Distinct reported kernel check must be explicitly required')
+    return errors
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser(description='Merge all host shards and audit global idempotency')
     parser.add_argument('folders',nargs='+',type=pathlib.Path)
@@ -210,9 +257,20 @@ def main(argv=None):
     parser.add_argument('--server-metrics',type=pathlib.Path,action='append',help='One metrics snapshot per active service JVM, captured AFTER all shards finish (repeat)')
     parser.add_argument('--gateway-witness',type=pathlib.Path,help='Optional final loopback gateway witness JSON from ONE monotonic clock')
     parser.add_argument('--require-distinct-kernels',action='store_true',help='Fail if independent reported kernel fingerprints are not demonstrated for the producer shards')
+    parser.add_argument('--launch-manifest',type=pathlib.Path,help='Collector-retained v2 launch manifest; fail closed on mismatched settings')
+    parser.add_argument('--evidence-index',type=pathlib.Path,help='Collector-retained SHA256 index, sealed before merge')
+    parser.add_argument('--clock-evidence',type=pathlib.Path,help='Collector-retained four-timestamp UTC offset observations (not host proof)')
+    parser.add_argument('--max-clock-width-ms',type=float,default=100.0)
+    parser.add_argument('--strict-external-preflight',action='store_true',help='Require separate collector manifest, sealed shard index, bounded clock evidence and distinct reported kernels; NOT host authentication')
     p=parser.parse_args(argv)
     import os
-    try:r=merge(p.folders,p.verify_state,p.await_done_seconds,token=os.environ.get('DEROYQUE_SIM_READ_TOKEN'),server_metrics=p.server_metrics,require_distinct_kernels=p.require_distinct_kernels,gateway_witness=p.gateway_witness)
+    if p.strict_external_preflight:
+        requirements=strict_external_preflight(p.launch_manifest,p.evidence_index,p.clock_evidence,
+                                                p.require_distinct_kernels)
+        if requirements:
+            print('STRICT_EXTERNAL_PREFLIGHT_FAILED: '+'; '.join(requirements),file=sys.stderr)
+            return 2
+    try:r=merge(p.folders,p.verify_state,p.await_done_seconds,token=os.environ.get('DEROYQUE_SIM_READ_TOKEN'),server_metrics=p.server_metrics,require_distinct_kernels=p.require_distinct_kernels,gateway_witness=p.gateway_witness,launch_manifest=p.launch_manifest,evidence_index=p.evidence_index,clock_evidence=p.clock_evidence,max_clock_width_ms=p.max_clock_width_ms)
     except (ValueError,KeyError,OSError,json.JSONDecodeError) as e:
         print(f'DISTRIBUTED_MERGE_FATAL: {e}',file=sys.stderr);return 2
     if p.output:

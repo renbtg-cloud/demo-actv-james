@@ -1,0 +1,5 @@
+# Milestone 72 — Immutable launch-plan binding for distributed producers
+
+`simulator/distributed_prepare.py` now writes a versioned, explicit deterministic launch plan (`manifest.json` schema 2), and SHA-256 digests for every generated per-host launch script. The plan includes the UTC barrier, global identities, shard/JVM allocation, rate/profile, randomized workload seed, distribution, contention and JVM resource settings. `distributed_integrity.verify_launch` compares that retained plan to every delivered shard's `summary.json`; `verify_launch_scripts` detects launch scripts modified after preparation.
+
+This prevents a self-consistent merge of results from a *different* workload from being silently called the requested experiment. The independent collector must retain an original manifest and its generated launch scripts in a protected location; a manifest supplied by an untrusted host is not authoritative. It does not provision remote hosts or certify that a script actually ran there.

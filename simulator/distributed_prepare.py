@@ -64,7 +64,19 @@ def build_scripts(args,now_ms=None):
               "./simulator/build.sh\n"
               +shlex.join(argv)+"\n")
         scripts[f'launch-host-{shard:03d}.sh']=body
-    manifest={'run_id':args.run_id,'target_url':args.url,'shards':args.shards,
+    plan={'profile':args.profile,'distribution':args.distribution,
+          'duration_seconds':float(args.duration_seconds),'seed':args.seed,
+          'global_attempted_posts':args.requests,'shared_keys':args.keys,
+          'conflict_percent':args.conflict_percent,'target_qps':float(args.rate),
+          'shard_count':args.shards,'start_at_ms':start,
+          'ramp_start_rate':float(args.ramp_start_rate),'burst_rate':float(args.burst_rate),
+          'burst_width_seconds':float(args.burst_width_seconds),
+          'burst_period_seconds':float(args.burst_period_seconds),
+          'hotspot_percent':float(args.hotspot_percent),
+          'hotspot_keys_percent':float(args.hotspot_keys_percent),
+          'skew_power':float(args.skew_power),
+          'heap_max_mb':args.heap_max_mb,'concurrency_per_jvm':args.concurrency}
+    manifest={'schema_version':2,'launch_plan':plan,'run_id':args.run_id,'target_url':args.url,'shards':args.shards,
               'jvms_per_host':counts,'global_posts':args.requests,'shared_keys':args.keys,
               'start_at_epoch_ms':start,
               'start_at_utc':dt.datetime.fromtimestamp(start/1000,dt.timezone.utc).isoformat(),
