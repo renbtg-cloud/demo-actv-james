@@ -4,7 +4,7 @@
 
 This repository contains the **actual experimental source code**, not the older documentation-only preview. The three primary deliverables are the asynchronous activation service, an independent HTTP provider simulator, and a configurable multi-JVM incoming-transaction simulator. They are developed as one evolving system.
 
-**Status (2 November 2026):** the real Spring Boot 4.1.2 and Flyway V1/V2 passed six adversarial GitHub Actions jobs (including four JVMs genuinely contending for the same DB row). Milestone 18 adds fail-closed JWT resource-server security as the Spring deployment default, verified in a seventh CI job (0/23 failures); all seven real Spring jobs passed (0/212 failures): [GitHub Actions run 41456694967](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41456694967).
+**Verified status (2 November 2026, Milestone 20):** nine real Spring CI jobs passed (0/264 integration assertion failures; 264/264 passed) including JWT, independent real Keycloak, optional local Keycloak, PostgreSQL/RabbitMQ/SQLite durable activation, and multi-JVM crash/contended-row adversarial tests: [GitHub Actions run 41475178125](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41475178125). The next JWKS lifecycle tests in Milestone 21 require their own new CI run before integration success can be claimed.
 
 ## Layout
 
@@ -21,6 +21,17 @@ This repository contains the **actual experimental source code**, not the older 
 ## Keycloak identity-provider integration (Milestone 19)
 
 A new GitHub Actions matrix job (`oidc-keycloak`) tests the **real Spring OAuth2 Resource Server** against a disposable Keycloak authorization server. It obtains access tokens from the genuine `client_credentials` endpoint using per-run clients and realms, exercises issuer/audience/scope authorization, then verifies the durable activation through PostgreSQL, RabbitMQ and an independent SQLite provider. The real OIDC job passed **0/26 failures; 26/26 checks passed**. Combined with the seven prior real-Spring jobs, [GitHub Actions run 41469917139](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41469917139) passed **0/238 failures; 238/238 checks passed**. See `docs/MILESTONE-19.md`. This is a CI-only local HTTP development server; **it is not a production IdP deployment**.
+
+## Milestone 21 — JWKS key rotation and issuer-outage security tests (pending real CI)
+
+The existing `jwt-security` integration harness now exercises an actual mutable
+loopback JWKS endpoint: new RS256 key discovery without restarting Spring,
+issuer outage while an unfamiliar key is presented, recovery, an overlap period,
+concurrent signed requests, and issuer/audience denial after rotation.
+The script intentionally **does not claim immediate token revocation** when a
+public key disappears from JWKS: resource-server JWKS caches may retain keys
+until their TTL expires. No production key rotation is configured by this
+fixture. See `docs/MILESTONE-21.md` for the test contract and verification gate.
 
 ## Build and test the real Spring Boot service
 

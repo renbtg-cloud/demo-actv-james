@@ -6,10 +6,9 @@ static signed tokens or private production credentials. Exercise HTTP security
 and a real PostgreSQL/RabbitMQ/independent SQLite provider activation.
 """
 import argparse, base64, json, os, pathlib, secrets, signal, socket, sqlite3, subprocess, sys
-import tempfile, threading, time, urllib.error, urllib.request, uuid
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from cryptography.hazmat.primitives.asymmetric import rsa, padding
-from cryptography.hazmat.primitives import hashes
+import tempfile, time, urllib.error, urllib.request, uuid
+from concurrent.futures import ThreadPoolExecutor
+from jwks_rotation_fixture import RotatingJwksFixture, b64
 
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 parser=argparse.ArgumentParser()
@@ -57,39 +56,15 @@ def eventually(callback,seconds=30):
         time.sleep(.16)
     return None
 
-def b64(data):return base64.urlsafe_b64encode(data).decode().rstrip('=')
-
-# No fixed key material. A new signing key is generated for each CI run.
-private_key=rsa.generate_private_key(public_exponent=65537,key_size=2048)
-public=private_key.public_key().public_numbers()
-kid='ci-jwt-'+tag
-jwks={'keys':[{'kty':'RSA','alg':'RS256','use':'sig','kid':kid,
-    'n':b64(public.n.to_bytes((public.n.bit_length()+7)//8,'big')),
-    'e':b64(public.e.to_bytes((public.e.bit_length()+7)//8,'big'))}]}
-class JwksHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path!='/keys':
-            self.send_error(404);return
-        b=json.dumps(jwks).encode()
-        self.send_response(200);self.send_header('Content-Type','application/json')
-        self.send_header('Cache-Control','no-store');self.send_header('Content-Length',str(len(b)))
-        self.end_headers();self.wfile.write(b)
-    def log_message(self,*unused):pass
-
-jwks_server=ThreadingHTTPServer(('127.0.0.1',0),JwksHandler)
-thread=threading.Thread(target=jwks_server.serve_forever,daemon=True);thread.start()
-issuer=f'http://127.0.0.1:{jwks_server.server_port}/issuer'
+# A real local HTTP JWKS server; the same signer and endpoint are reused while
+# publishing a second key and simulating an unavailable issuer.
+jwks_fixture=RotatingJwksFixture(tag)
+first_kid=jwks_fixture.add_key('initial')
+issuer=jwks_fixture.uri.rsplit('/keys',1)[0]+'/issuer'
 audience='deroyque-jwt-resource-'+tag
 
-def token(scope='activation:write',**overrides):
-    now=int(time.time())
-    claims={'iss':issuer,'aud':[audience],'sub':'ci-verified-user','iat':now,
-            'nbf':now-10,'exp':now+600,'scope':scope}
-    claims.update(overrides)
-    header={'alg':'RS256','typ':'JWT','kid':kid}
-    signing=b64(json.dumps(header,separators=(',',':')).encode())+'.'+b64(json.dumps(claims,separators=(',',':')).encode())
-    signature=private_key.sign(signing.encode(),padding.PKCS1v15(),hashes.SHA256())
-    return signing+'.'+b64(signature)
+def token(scope='activation:write',kid=None,**overrides):
+    return jwks_fixture.token(kid or first_kid, issuer, audience, scope, **overrides)
 
 def http(method,path,auth=None,payload=None,timeout=5):
     headers={}
@@ -115,7 +90,7 @@ def run():
     jdbc=f'jdbc:postgresql://{pg["host"]}:{pg["port"]}/{pg["db"]}?currentSchema={schema}'
     jwt_env={
         'APP_AUTH_MODE':'jwt','APP_JWT_ISSUER':issuer,
-        'APP_JWT_JWKS_URI':f'http://127.0.0.1:{jwks_server.server_port}/keys',
+        'APP_JWT_JWKS_URI':jwks_fixture.uri,
         'APP_JWT_AUDIENCE':audience,'APP_JWT_ALLOW_HTTP_LOOPBACK':'1',
         'APP_API_ENABLED':'1','APP_LAB_METRICS_ENABLED':'0',
         'P13_JDBC':jdbc,'P13_DB_USER':pg['user'],'P13_DB_PASSWORD':pg['password'],
@@ -191,6 +166,46 @@ def run():
     check(provider_effects()==1,'independent SQLite provider recorded exactly one external effect')
     check(sql('SELECT count(*) FROM '+schema+'.p20_signed_attestation')=='1',
           'signed evidence persisted in PostgreSQL')
+    # Adversarial issuer lifecycle: introducing a previously unknown signing key
+    # must cause a real JWKS refresh, while a key unavailable during issuer outage
+    # must not be authenticated. This is NOT an instant revocation guarantee:
+    # decoder caches can retain a retired public key until their TTL expires.
+    fetches_before=jwks_fixture.get_count
+    second_kid=jwks_fixture.add_key('rotated')
+    second_read=token('activation:read',kid=second_kid)
+    check(http('GET','/api/v1/requests/'+str(uuid.uuid4()),auth=second_read)[0]==404,
+          'real JWT signed by newly published RS256 kid accepted without Spring restart')
+    check(jwks_fixture.get_count>fetches_before,
+          'Spring decoder fetched updated JWKS for newly introduced kid')
+    check(http('GET','/api/v1/requests/'+str(uuid.uuid4()),auth=real_read)[0]==404,
+          'old signed key still accepted during deliberate overlap period')
+    third_kid=jwks_fixture.add_key('during-outage',publish=False)
+    third_read=token('activation:read',kid=third_kid)
+    jwks_fixture.available(False)
+    try:
+        check(http('GET','/api/v1/requests/'+str(uuid.uuid4()),auth=third_read)[0]==401,
+              'unpublished key denied while JWKS endpoint returns HTTP 503')
+    finally:
+        jwks_fixture.available(True)
+    jwks_fixture.publish(third_kid)
+    check(bool(eventually(lambda: http('GET','/api/v1/requests/'+str(uuid.uuid4()),auth=third_read)[0]==404,10)),
+          'previously unavailable newly published JWKS key recovers without restart')
+    jwks_fixture.retire(first_kid)
+    # Intentionally make no claim that removing a key from JWKS immediately
+    # invalidates old tokens: Nimbus may still cache the old public key.
+    # Mixed-key reads only use currently published keys. Old tokens can be
+    # accepted or rejected depending on cache age; neither outcome is a CI gate.
+    retired_status=http('GET','/api/v1/requests/'+str(uuid.uuid4()),auth=real_read)[0]
+    result['retired_key_immediate_http_status']=retired_status
+    checks=[(second_read,404),(third_read,404)]*12
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        actual=list(pool.map(lambda case: http('GET','/api/v1/requests/'+str(uuid.uuid4()),auth=case[0])[0],checks))
+    check(len(actual)==len(checks) and all(actual[i]==expected for i,(_,expected) in enumerate(checks)),
+          '24 concurrent mixed-kid reads preserve authentication and authorization')
+    check(http('GET','/api/v1/requests/'+str(uuid.uuid4()),auth=token('activation:read',kid=second_kid,iss='https://attacker.invalid'))[0]==401,
+          'newly rotated key does not bypass issuer validation')
+    check(http('GET','/api/v1/requests/'+str(uuid.uuid4()),auth=token('activation:read',kid=third_kid,aud=['attacker-api']))[0]==401,
+          'post-outage key does not bypass audience validation')
     result['signed_effect_verified']=True
     return 0
 
@@ -209,7 +224,7 @@ def main():
                 except subprocess.TimeoutExpired:
                     os.killpg(p.pid,signal.SIGKILL);p.wait(timeout=5)
             f.close()
-        jwks_server.shutdown();jwks_server.server_close();tmp.cleanup()
+        jwks_fixture.close();tmp.cleanup()
         passed=sum(x['passed'] for x in result['checks']);failed=len(result['checks'])-passed
         result.update({'failed':failed,'passed':passed,'total':len(result['checks']),'exit_code':code})
         print(f'JWT_SECURITY_RESULT FAILURES {failed}/{len(result["checks"])} PASSED {passed}/{len(result["checks"])}',flush=True)
