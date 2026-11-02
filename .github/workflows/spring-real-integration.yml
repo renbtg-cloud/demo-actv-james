@@ -80,6 +80,6 @@ jobs:
           P13_RABBIT_USER: deroyque_ci
           P13_RABBIT_PASSWORD: lab-ci-only-rabbit-password
         run: |
-          ./scripts/test-spring-real.sh --adversarial-max-jvms 24 --output "$RUNNER_TEMP/spring-real-result.json"
+          ./scripts/test-spring-real.sh --adversarial-max-jvms 24 --adversarial-service-jvms 4 --adversarial-crashes 2 --output "$RUNNER_TEMP/spring-real-result.json"
           cat "$RUNNER_TEMP/spring-real-result.json"
       # No raw JVM/provider logs, database dumps, keys, or credentials are uploaded.

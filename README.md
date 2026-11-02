@@ -94,3 +94,27 @@ idempotency-key retention contract, with the application using a conservative
 retries; retention=unknown would correctly pause uncertain attempts instead.
 The simulator remains at 24 producer JVMs x 8 HTTP operations in the full
 GitHub Actions stress plan; admission backpressure is exercised on the server.
+
+## Milestone 14 — staggered multi-instance Spring failure test
+
+GitHub Actions now runs **four truly independent Spring Boot JVM processes**
+against the same PostgreSQL schema and RabbitMQ queue. A memory-aware number
+of separate Java producer processes (up to 24) submits 960 real HTTP POSTs
+sharing 160 idempotency keys. After observing durable admission and verified
+worker activity on each victim, the harness issues two OS `SIGKILL` signals
+to **different** Spring instances at distinct admission checkpoints; at least
+two other Spring processes must remain alive. Auditors check all HTTP replies,
+final states, overlapping producer JVMs, and exactly one SQLite provider
+effect per accepted key. Workload thresholds, resource budget and crash
+checkpoints are reported; runner capacity is not inferred.
+
+Run in an isolated test environment:
+
+```bash
+./scripts/test-spring-real.sh --adversarial-max-jvms 24 --adversarial-service-jvms 4 --adversarial-crashes 2 --output /tmp/deroyque-m14.json
+```
+
+The incident tests survival of process loss during concurrent requests. It
+**does not establish** that every killed JVM was between an external provider
+side effect and local persistence at the instant of the kill. No claim of
+unconditional external exactly-once delivery is made.

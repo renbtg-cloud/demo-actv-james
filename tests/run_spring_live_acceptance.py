@@ -15,7 +15,9 @@ PARSER.add_argument('--mode',choices=['boot','legacy'],default='boot')
 PARSER.add_argument('--boot-jar',default=str(ROOT/'adapter-springboot/target/deroyque-springboot-0.10.0-SNAPSHOT.jar'))
 PARSER.add_argument('--output',default=None,help='Write sanitized JSON results here')
 PARSER.add_argument('--load-jvms',type=int,default=8,help='Number of independent generator JVMs (0 disables additional load)')
-PARSER.add_argument('--adversarial-max-jvms',type=int,default=0,help='Run multi-Spring-JVM crash/load test, up to this many independent producer JVMs (0 disables)')
+PARSER.add_argument('--adversarial-max-jvms',type=int,default=0,help='Run real Spring-JVM crash/load test, up to this many independent producer JVMs (0 disables)')
+PARSER.add_argument('--adversarial-service-jvms',type=int,default=4,help='Independent Spring Boot JVMs sharing one database and queue (2..8)')
+PARSER.add_argument('--adversarial-crashes',type=int,default=2,help='Distinct Spring peer JVMs to SIGKILL in stages, leaving at least two alive')
 ARGS=PARSER.parse_args()
 PG=os.environ.get('DEROYQUE_PSQL','psql')
 HOST=os.environ.get('DEROYQUE_PG_HOST','127.0.0.1')
@@ -87,7 +89,7 @@ def provider_effects():
         return c.execute('select count(*) from effect').fetchone()[0]
 
 def adversarial_jvm_budget(max_jvms):
-    """Reserve RAM for two Spring JVMs and dependencies, then bound producer JVMs.
+    """Reserve RAM for Spring JVMs and dependencies, then bound producer JVMs.
 
     This is a preflight memory estimate, not proof that actual RSS will fit.
     Never override the simulator's independent cgroup guard.
@@ -142,67 +144,118 @@ def wait_for_admission(prefix,minimum,seconds=30):
         time.sleep(.3)
     return 0
 
+def worker_activity(role):
+    """Count only predefined non-secret worker markers, never expose process logs."""
+    path=TMPPATH/(role+'.log')
+    try:
+        content=path.read_text(errors='replace')
+    except OSError:
+        return 0
+    return sum(content.count(x) for x in ('P14_PROOF_SETTLED rid=', 'P16_PROCESSED rid='))
+
 def adversarial_spring_test(jar,base_env):
     if ARGS.mode!='boot':raise RuntimeError('Multi-JVM Spring stress requires REAL Spring Boot')
+    service_count=ARGS.adversarial_service_jvms
+    crash_count=ARGS.adversarial_crashes
+    if not 2<=service_count<=8 or not 1<=crash_count<=service_count-2:
+        raise ValueError('Specify 3..8 service JVMs and 1..service_count-2 distinct peer crashes (at least two survivors)')
+    # The already-running primary is one service JVM. Each peer is a separate real
+    # Java process with independent consumers, sharing the SAME JDBC and broker.
+    peers=[]
+    for peer_index in range(service_count-1):
+        role=f'spring-peer-{peer_index}'
+        port=freeport()
+        peer=start(role,['java','-Xmx320m','-jar',str(jar)],{
+            **base_env,'SERVER_PORT':str(port),'P13_API_PORT':str(port),
+            'APP_LAB_METRICS_ENABLED':'0'})
+        peers.append((role,peer,port))
+        def peer_ready(peer=peer,port=port):
+            if peer.poll() is not None:raise RuntimeError('Independent Spring worker JVM exited during boot')
+            with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/v1/health/readiness',timeout=2) as r:
+                return r.status==200
+        must(bool(eventually(peer_ready,55)),f'Spring peer {peer_index+1}/{service_count-1} ready against shared PostgreSQL and RabbitMQ')
+    primary=CHILDREN[1][0]
+    service_pids=[primary.pid]+[p.pid for _,p,_ in peers]
+    must(len(set(service_pids))==service_count and all(p.poll() is None for _,p,_ in peers),
+         'all Spring service JVMs have distinct live OS process IDs')
+
+    # Measure AVAILABLE memory AFTER the Spring peers have started. Do not use
+    # --unsafe-resource-override to artificially inflate producer counts.
     jvms=adversarial_jvm_budget(ARGS.adversarial_max_jvms)
-    peer_port=freeport()
-    peer=start('spring-peer',['java','-Xmx384m','-jar',str(jar)],{
-        **base_env,'SERVER_PORT':str(peer_port),'P13_API_PORT':str(peer_port),
-        'APP_LAB_METRICS_ENABLED':'0'})
-    def peer_ready():
-        if peer.poll() is not None:raise RuntimeError('Independent Spring worker JVM exited during boot')
-        with urllib.request.urlopen(f'http://127.0.0.1:{peer_port}/api/v1/health/readiness',timeout=2) as r:
-            return r.status==200
-    must(bool(eventually(peer_ready,45)),'second independent Spring Boot JVM is ready against SAME PostgreSQL and RabbitMQ')
-    must(peer.pid!=CHILDREN[1][0].pid,'Spring peers have distinct process IDs')
     run_id='adv-'+TAG
     simdir=TMPPATH/'adversarial-load'
     args=[sys.executable,'-u',str(ROOT/'simulator/run.py'),
           '--url',f'http://127.0.0.1:{API}','--jvms',str(jvms),
           '--concurrency','8','--requests','960','--keys','160',
-          '--conflict-percent','40','--rate','110','--start-delay-ms','6500',
-          '--timeout-ms','10000','--await-done-seconds','100',
+          '--conflict-percent','40','--rate','95','--start-delay-ms','7500',
+          '--timeout-ms','12000','--await-done-seconds','130',
           '--heap-max-mb','64','--active-processors','1',
           '--run-id',run_id,'--verify-state','--output-dir',str(simdir)]
     sim=start('adversarial-generator',args,{
         'DEROYQUE_SIM_WRITE_TOKEN':WRITE,'DEROYQUE_SIM_READ_TOKEN':READ})
-    admitted=wait_for_admission(run_id,12,45)
-    must(admitted>=12 and sim.poll() is None,'independent producers admitted work while both Spring JVMs were alive')
-    must(peer.poll() is None,'peer Spring JVM remained alive until deliberate crash injection')
-    os.killpg(peer.pid,signal.SIGKILL)
-    peer.wait(timeout=8)
-    must(peer.returncode==-signal.SIGKILL,'second Spring JVM was killed by SIGKILL, not graceful shutdown')
-    must(CHILDREN[1][0].poll() is None,'surviving Spring JVM remained alive after peer crash')
-    try:sim.wait(timeout=160)
-    except subprocess.TimeoutExpired:raise RuntimeError('adversarial load generator exceeded 160s')
+    kill_events=[]
+    # Stagger genuine OS-level SIGKILLs based on SERVER-OBSERVED unique durable
+    # admissions, not time estimates or producer-side launch counts. The targets
+    # are monotonic and leave producers running at each crash checkpoint.
+    targets=[20+index*35 for index in range(crash_count)]
+    for crash_index,target in enumerate(targets):
+        role,peer,_=peers[crash_index]
+        admitted=wait_for_admission(run_id,target,65)
+        must(admitted>=target and sim.poll() is None,
+             f'crash checkpoint {crash_index+1}: {target}+ unique durable admissions while producers active')
+        must(peer.poll() is None,'selected Spring peer remains alive before SIGKILL')
+        activity=worker_activity(role)
+        # Peer activity is meaningful evidence but does not prove the exact
+        # instantaneous HTTP state when the process dies.
+        must(activity>0,f'selected Spring peer {crash_index+1} completed real worker operations before crash')
+        os.killpg(peer.pid,signal.SIGKILL)
+        peer.wait(timeout=10)
+        must(peer.returncode==-signal.SIGKILL,f'distinct Spring peer {crash_index+1} died by SIGKILL')
+        survivors=[primary]+[p for _,p,_ in peers if p.poll() is None]
+        must(len(survivors)>=2 and all(p.poll() is None for p in survivors),
+             'two or more Spring JVMs survive the deliberately staggered crash')
+        kill_events.append({'peer_index':crash_index,'durable_admissions_at_crash':admitted,
+                            'prior_completed_worker_events':activity,'exit_signal':'SIGKILL'})
+        print('STAGGERED_CRASH index='+str(crash_index+1)+'/'+str(crash_count)+
+              ' admitted='+str(admitted)+' worker_events='+str(activity)+
+              ' survivors='+str(len(survivors)),flush=True)
+    try:sim.wait(timeout=195)
+    except subprocess.TimeoutExpired:raise RuntimeError('adversarial load generator exceeded 195s')
     if sim.returncode!=0:
         simulator_diagnostics(simdir,sim.returncode)
-        # Only predefined SQLState codes and counts from local Spring process logs.
-        # No plaintext error messages or request bodies enter CI output.
         import collections
-        for role in ('service','spring-peer'):
+        for role in ('service',)+tuple(role for role,_,_ in peers):
             log_file=TMPPATH/(role+'.log')
             if log_file.exists():
                 states=collections.Counter(re.findall(r'DEROYQUE_ADMISSION_SQLSTATE ([A-Z0-9]{5})',log_file.read_text(errors='replace')))
                 print('ADMISSION_SQLSTATES '+role+' '+json.dumps(states,sort_keys=True),flush=True)
-    must(sim.returncode==0,'multi-JVM simulator finished and validated every generated request')
+    must(sim.returncode==0,'multi-JVM simulator finished and verified every generated request')
     report=json.loads((simdir/'summary.json').read_text()) if (simdir/'summary.json').exists() else {}
     observed=report.get('observed',{})
     peak=observed.get('peak_jvms_with_inflight_http',0)
     must(observed.get('records')==960 and observed.get('admitted_keys_observed')==160,
-         '960 POSTs and 160 unique keys observed across independent producer JVMs')
-    must(peak>=8,'at least eight PRODUCER JVMs actually overlapped in flight (not merely launched)')
+         '960 POSTs and 160 unique keys observed from independent producer JVMs')
+    must(peak>=8,'at least eight PRODUCER JVMs had overlapping HTTP, not merely launched')
     must(report.get('outcome')=='PASS' and not report.get('violations') and not report.get('state_verification_errors'),
-         'global idempotency and all final request states passed after worker crash')
+         'global idempotency and every final state passed after staggered worker crashes')
     with sqlite3.connect(TMPPATH/'provider.sqlite3') as c:
         effects=c.execute('SELECT count(*) FROM effect WHERE key LIKE ?',(run_id+'-%',)).fetchone()[0]
-    must(effects==160,'provider SQLite recorded exactly 160 external effects for 160 keys (no duplicates)')
-    RESULT['adversarial']={'producer_jvms_configured':jvms,
-        'producer_jvms_with_overlapping_http':peak,
-        'requests':960,'keys':160,'effects':effects,'peer_killed_with_sigkill':True,
+        doubled=c.execute('SELECT count(*) FROM (SELECT key FROM effect WHERE key LIKE ? GROUP BY key HAVING count(*)<>1)',(run_id+'-%',)).fetchone()[0]
+    must(effects==160 and doubled==0,
+         'provider SQLite recorded exactly one external effect for each of 160 unique keys')
+    must(all(p.poll() is None for p in [primary]+[p for _,p,_ in peers[crash_count:]]),
+         'all uncrashed Spring service JVMs still alive after final-state audit')
+    RESULT['adversarial']={'spring_service_jvms_started':service_count,
+        'spring_service_jvms_killed':crash_count,
+        'spring_service_jvms_survived':service_count-crash_count,
+        'staggered_crash_events':kill_events,
+        'producer_jvms_configured':jvms,'producer_jvms_with_overlapping_http':peak,
+        'requests':960,'keys':160,'effects':effects,
         'producer_throughput_qps':observed.get('post_attempts_per_second'),
         'outcome':report.get('outcome')}
-    print('ADVERSARIAL_OUTCOME PASS jvms='+str(jvms)+' overlap='+str(peak)+
+    print('ADVERSARIAL_OUTCOME PASS service_jvms='+str(service_count)+
+          ' sigkills='+str(crash_count)+' survivors='+str(service_count-crash_count)+
+          ' producer_jvms='+str(jvms)+' overlap='+str(peak)+
           ' HTTP=960 keys=160 effects='+str(effects),flush=True)
 
 def run():
