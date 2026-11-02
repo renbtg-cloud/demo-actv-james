@@ -28,3 +28,14 @@ python3 -u tests/run_spring_same_row_race.py \
 ```
 
 Requires PostgreSQL 17, RabbitMQ 4.4 and `psql`, plus the service credentials configured in CI. The test never pauses or stops external shared PostgreSQL/RabbitMQ services. Each run creates a separate schema and queue. As in prior milestones, a green job is a specific experimental result, not proof of universally exactly-once side effects.
+
+## Actual observed CI result
+
+GitHub Actions run: https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41451524902
+
+- **New same-row contention test:** 0/22 failed; 22/22 passed. Four distinct real Spring Boot JVMs entered the same held row; exactly one committed claim and **seven** `STALE` claim outcomes were observed; one signed proof, one settlement and one independent provider effect followed.
+- **Full six-job Spring regression:** 0/189 failed; 189/189 passed (22 same-row + 16 late/contradictory + 44 competing windows + 44 exact fault windows + 44 staggered crashes + 19 dependency interruptions).
+- **Original first CI attempt:** failed at provider `/health` because the new harness incorrectly expected JSON rather than plaintext. Corrected in commit `ed68992e3b5408019a7e752daac0836daaa5d42c`; the follow-up run above passed.
+- **Extracted ZIP verification:** `./scripts/build.sh`, 33/33 facade checks and 52/52 simulator checks passed. Five test-only JVM sources missing from the previous packaging manifest (3 SLF4J shim files and 2 lab Java provider files) are restored to the integrated source tree. The offline build still requires locally supplied PostgreSQL and RabbitMQ client JAR dependencies, as explicitly stated by `scripts/build.sh`; these dependencies are not embedded in the ZIP.
+
+The `P21_RACE_ENTER` diagnostic marks entry before a blocked row-level operation. It does **not** imply simultaneous execution of the same bytecode instruction, nor does it prove 7 distinct losing JVMs (the losers are individual claim attempts). The stronger result is four JVMs each entered the same row before release, combined with one committed claim and seven STALE attempts in aggregate.

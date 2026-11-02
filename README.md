@@ -134,3 +134,11 @@ claims, signed proof, settlement and independent provider effect. The new
 `P21_TRACE_CLAIM_RACE=1` diagnostic is opt-in and does not gate production behavior.
 The test seeds this specific internal request directly, without an outbox, so it
 does **not** claim to re-test HTTP admission. See `docs/MILESTONE-17.md`.
+
+Milestone 17 CI passed: 0/22 failures in the same-row case (22/22 passed),
+0/189 failures across all six Spring Boot jobs (189/189 passed):
+https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41451524902
+
+The offline `scripts/build.sh` path additionally needs the included lab-only SLF4J
+shim and two lab provider Java sources, plus separately provisioned PostgreSQL and
+RabbitMQ client JAR dependencies. These external JARs are not bundled.
