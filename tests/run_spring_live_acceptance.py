@@ -199,22 +199,37 @@ def adversarial_spring_test(jar,base_env):
     # are monotonic and leave producers running at each crash checkpoint.
     targets=[20+index*35 for index in range(crash_count)]
     for crash_index,target in enumerate(targets):
-        role,peer,_=peers[crash_index]
         admitted=wait_for_admission(run_id,target,65)
         must(admitted>=target and sim.poll() is None,
              f'crash checkpoint {crash_index+1}: {target}+ unique durable admissions while producers active')
-        must(peer.poll() is None,'selected Spring peer remains alive before SIGKILL')
-        activity=worker_activity(role)
-        # Peer activity is meaningful evidence but does not prove the exact
-        # instantaneous HTTP state when the process dies.
-        must(activity>0,f'selected Spring peer {crash_index+1} completed real worker operations before crash')
+        # Choose a REAL worker victim, not a fixed index that may have received
+        # zero Rabbit deliveries. The event counters come from its own stdout;
+        # don't infer activity from the fact that the process merely booted.
+        deadline=time.monotonic()+45
+        victim=None
+        while time.monotonic()<deadline:
+            eligible=[(role,peer,worker_activity(role)) for role,peer,_ in peers
+                      if peer.poll() is None and worker_activity(role)>0]
+            if eligible:
+                victim=max(eligible,key=lambda item:item[2])
+                break
+            if sim.poll() is not None:break
+            time.sleep(.3)
+        if victim is None:
+            diagnostic={role:worker_activity(role) for role,_,_ in peers}
+            print('WORKER_ACTIVITY_COUNTS '+json.dumps(diagnostic,sort_keys=True),flush=True)
+        must(victim is not None and sim.poll() is None,
+             f'crash checkpoint {crash_index+1}: active peer worker found during ongoing generator run')
+        role,peer,activity=victim
+        must(activity>0 and peer.poll() is None,
+             'selected Spring peer has observed completed worker operations and is alive')
         os.killpg(peer.pid,signal.SIGKILL)
         peer.wait(timeout=10)
         must(peer.returncode==-signal.SIGKILL,f'distinct Spring peer {crash_index+1} died by SIGKILL')
         survivors=[primary]+[p for _,p,_ in peers if p.poll() is None]
         must(len(survivors)>=2 and all(p.poll() is None for p in survivors),
              'two or more Spring JVMs survive the deliberately staggered crash')
-        kill_events.append({'peer_index':crash_index,'durable_admissions_at_crash':admitted,
+        kill_events.append({'peer_role':role,'durable_admissions_at_checkpoint':admitted,
                             'prior_completed_worker_events':activity,'exit_signal':'SIGKILL'})
         print('STAGGERED_CRASH index='+str(crash_index+1)+'/'+str(crash_count)+
               ' admitted='+str(admitted)+' worker_events='+str(activity)+
@@ -243,7 +258,7 @@ def adversarial_spring_test(jar,base_env):
         doubled=c.execute('SELECT count(*) FROM (SELECT key FROM effect WHERE key LIKE ? GROUP BY key HAVING count(*)<>1)',(run_id+'-%',)).fetchone()[0]
     must(effects==160 and doubled==0,
          'provider SQLite recorded exactly one external effect for each of 160 unique keys')
-    must(all(p.poll() is None for p in [primary]+[p for _,p,_ in peers[crash_count:]]),
+    must(all(p.poll() is None for p in [primary]+[p for role,p,_ in peers if role not in {e['peer_role'] for e in kill_events}]),
          'all uncrashed Spring service JVMs still alive after final-state audit')
     RESULT['adversarial']={'spring_service_jvms_started':service_count,
         'spring_service_jvms_killed':crash_count,
