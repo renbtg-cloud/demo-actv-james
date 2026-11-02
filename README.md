@@ -87,8 +87,10 @@ Both paths use the exact same Spring Security resource-server validation. The
 local process and its disposable demonstration realm are **opt-in, off by default,
 loopback-only, non-production**. Client credentials and realm files are generated
 randomly under gitignored `.local/keycloak`, not committed. `down` removes the
-container and temporary secrets. See `docs/MILESTONE-20.md` for limitations,
-troubleshooting, and CI evidence.
+container and temporary secrets. The local option passed **0/26 integration checks** with real Keycloak,
+Spring Boot and the independent provider in GitHub Actions; all nine CI jobs
+passed **0/264 failures**. See `docs/MILESTONE-20.md` for limitations,
+troubleshooting, and [CI evidence](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41475178125).
 
 ## Spring Security OAuth2/JWT authentication
 

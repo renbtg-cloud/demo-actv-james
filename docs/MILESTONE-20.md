@@ -65,4 +65,16 @@ end-to-end acceptance harness through `--use-local-keycloak`. The original
 `oidc-keycloak` job is retained as an independent control. This checks the
 actual packaged commands instead of merely proving that Keycloak itself works.
 
-**Result status:** CI results must be verified before claiming integration pass.
+**Verified outcome (2 November 2026):** the actual [GitHub Actions run
+41475178125](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41475178125)
+finished `success`. The new `local-keycloak` job passed **0/26 failures;
+26/26 integration assertions passed**, after **0/4 failures; 4/4 local
+configuration unit checks passed**. All eight previously existing jobs also
+passed: **0/264 failures; 264/264 integration assertions passed** across all
+nine jobs. The load regression exercised four Spring Boot JVMs, two SIGKILLs,
+24 genuinely overlapping producer JVMs, 960 HTTP POSTs and 160 independently
+persisted effects for 160 unique identities.
+
+This is a real Docker/Keycloak/Spring/JDBC/RabbitMQ/SQLite CI integration result,
+not a production deployment or operational security certification.
+
