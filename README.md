@@ -4,7 +4,7 @@
 
 This repository contains the **actual experimental source code**, not the older documentation-only preview. The three primary deliverables are the asynchronous activation service, an independent HTTP provider simulator, and a configurable multi-JVM incoming-transaction simulator. They are developed as one evolving system.
 
-**Status (2 November 2026):** the real Spring Boot 4.1.2 and Flyway V1/V2 passed six adversarial GitHub Actions jobs (including four JVMs genuinely contending for the same DB row). Milestone 18 adds explicit JWT resource-server security to replace laboratory bearer tokens in the default deployment mode; see `docs/MILESTONE-18.md` and the CI test results.
+**Status (2 November 2026):** the real Spring Boot 4.1.2 and Flyway V1/V2 passed six adversarial GitHub Actions jobs (including four JVMs genuinely contending for the same DB row). Milestone 18 adds fail-closed JWT resource-server security as the Spring deployment default, verified in a seventh CI job (0/23 failures); all seven real Spring jobs passed (0/212 failures): [GitHub Actions run 41456694967](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41456694967).
 
 ## Layout
 

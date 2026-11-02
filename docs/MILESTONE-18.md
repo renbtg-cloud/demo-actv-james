@@ -17,4 +17,9 @@ The service previously accepted only static bearer tokens. The Spring deployment
 
 The seventh GitHub Actions matrix job `jwt-security` builds the actual Spring executable JAR and starts it with PostgreSQL 17, RabbitMQ 4.4 and an independent SQLite provider. It starts a disposable RSA keypair / loopback JWKS server, issues deliberately valid and invalid tokens, checks HTTP 401/403, correct scopes, idempotency, signed evidence and one durable external effect. No pre-generated signing keys or raw tokens are committed.
 
-Runtime CI results must be independently verified before claiming this milestone fully complete. Previous six jobs must remain green.
+## Verified results (2 November 2026)
+
+All seven real Spring jobs succeeded: no failures among 212 checks (0/212); 212/212 passed. The JWT-security job had 0/23 failures and 23/23 passes, including signature/issuer/audience/time validation, read/write scope denial, rejection of legacy lab bearer tokens, idempotent 202/200/409 admission, signed completion and exactly one external effect. Six previous adversarial jobs all passed; the staggered-crashes job again reported 24 independent overlapping JVM producers, 960 HTTP POSTs, 160 keys and 160 provider effects.
+
+Evidence: https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41456694967 (Spring Boot 4.1.2, PostgreSQL 17, RabbitMQ 4.4). This is a tested JWT resource server, not an authorization server; deployment still needs trusted identity-provider operations, TLS, secret controls and additional security review.
+
