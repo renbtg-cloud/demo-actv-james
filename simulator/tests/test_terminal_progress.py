@@ -1,5 +1,6 @@
 """Adversarial and real-thread contract of one-clock terminal observations."""
 import pathlib
+import random
 import sys
 import threading
 import time
@@ -62,6 +63,37 @@ class TraceTests(unittest.TestCase):
         self.assertEqual(r['convergence_lower_bound_ms'],100)
         self.assertEqual(r['convergence_upper_bound_ms'],107)
         self.assertEqual(r['convergence_bound_width_ms'],7)
+
+    def test_randomized_oracle_checks_true_event_duration_inside_bounds(self):
+        # Independent synthetic oracle: the observer sees only SQL aggregate
+        # counts, while this test alone knows the exact transition instants.
+        rng = random.Random(670066)
+        under = over = 0
+        for experiment in range(600):
+            admission = rng.randint(200_000, 1_800_000)
+            completion = admission + rng.randint(200, 2_500_000)
+            actual_ms = (completion-admission)/1e6
+            t=CompletionTrace(1,max_samples=1500)
+            end=1000
+            for _ in range(1500):
+                start=end+rng.randint(1, 25_000)
+                end=start+rng.randint(1, 80_000)
+                snapshot=rng.randint(start,end)
+                counters=('0|0|0' if snapshot<admission else
+                          '1|0|0' if snapshot<completion else '1|1|0')
+                t.observe(counters,end,query_start_ns=start)
+                if t.complete:break
+            else:self.fail(f'oracle experiment {experiment} did not finish')
+            r=t.report()
+            lo=r['convergence_lower_bound_ms']
+            hi=r['convergence_upper_bound_ms']
+            self.assertLessEqual(lo-0.001,actual_ms)
+            self.assertLessEqual(actual_ms,hi+0.001)
+            point=r['observed_convergence_ms']
+            if point<actual_ms-0.001:under+=1
+            if point>actual_ms+0.001:over+=1
+        self.assertGreater(under,0,'point observation must sometimes underestimate')
+        self.assertGreater(over,0,'point observation must sometimes overestimate')
 
     def test_reject_partial_terminal(self):
         t=CompletionTrace(2)

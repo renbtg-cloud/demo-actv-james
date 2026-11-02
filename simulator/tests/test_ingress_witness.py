@@ -116,7 +116,18 @@ class WitnessTests(unittest.TestCase):
         self.service1.shutdown();self.service1.server_close()
         self.service2.shutdown();self.service2.server_close()
         self.assertEqual(self.post()[0], 502)
-        r = get_report(self.gateway.server_port)
+        # The gateway intentionally records a completed operation AFTER it
+        # attempts downstream client delivery. Reading the 502 response can
+        # race with that accounting on the separate request-handler thread.
+        # Wait for the *real terminal counter*, never pretend it was observed.
+        deadline = time.monotonic() + 3.0
+        while True:
+            r = get_report(self.gateway.server_port)
+            if r['finished'] == 1 and r['inflight'] == 0:
+                break
+            if time.monotonic() >= deadline:
+                self.fail(f'witness did not complete accounting: {r["finished"]} finished, {r["inflight"]} inflight')
+            time.sleep(0.01)
         self.assertEqual(r['transport_errors'], 1)
         observed, errors = verify_witness(r, self.run_id, [{'status': 502}], {'502': 1})
         self.assertIsNone(observed)

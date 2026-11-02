@@ -12,6 +12,21 @@ real-Spring trials (**0/15 failures; 15/15 passed**). See
 Milestones 51–53 below add stronger per-identity proofs and require fresh CI
 verification before being treated as accepted.
 
+## Milestone 71 — Confirmed client/gateway-accounting race regression
+
+A CI-observed timing race in the witness negative-control test was fixed by
+waiting for its legitimate downstream-delivery accounting completion rather
+than asserting that reading a 502 means the background handler already
+finished. The gateway semantics are unchanged. See `docs/MILESTONE-71.md`.
+
+## Milestone 70 — Oracle-backed timing regression
+
+A seeded 600-case independent synthetic timing oracle tests the interval-censored
+bounds against the exact hidden admission/DONE transition instants, including
+both upward and downward bias of point estimates. This catches mathematical
+mistakes without claiming production-scale timing accuracy. See
+`docs/MILESTONE-70.md`.
+
 ## Milestones 67–69 — Interval-censored completion time, sampling health and CI-proofed trial bounds
 
 The terminal PostgreSQL observer now reports **interval-censored lower and upper bounds**
