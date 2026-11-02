@@ -293,3 +293,33 @@ colluding actors from fabricating self-reported kernel identities. The ledger
 is local to one securely managed collector filesystem; the receipt authenticates
 its claim, not physical host provenance. Never bundle private signing keys or
 bearer tokens inside Git commits, source ZIPs or shared evidence packages.
+
+## Portable signed shard transport (Milestones 93–98)
+
+After a remote host has completed its local simulator, independently obtained
+its collector session, and signed the shard with its pinned Ed25519 key:
+
+```sh
+python3 simulator/shard_bundle.py create \
+  --folder simulator/results/RUN-host-000 \
+  --signed-envelope /secure/host-000-envelope.json \
+  --output /secure/host-000.zip
+
+# Transfer each host-00N.zip via your own authenticated channel to the collector.
+# Run on the trusted collector; files manifest, keys and session are NEVER taken
+# from the incoming ZIPs.
+python3 simulator/shard_collection.py \
+  --manifest /trusted/manifest.json \
+  --session /trusted/session.json \
+  --pins /trusted/host-public-keys.json \
+  --output-dir /trusted/received/RUN \
+  /incoming/host-000.zip /incoming/host-001.zip
+```
+
+The collector *does not* start the machines, authenticate an SSH connection or
+prove that self-reported hosts are physically independent. Successful transport
+collection is not a global application PASS; run the separate global merger and
+server/provider state auditors on the verified imported shard directories. The
+ZIP deliberately holds no private keys. Linux `renameat2` is required for
+atomic no-replace publication. Keep incoming and trusted directories
+separately controlled. The integrity verifier rejects compressed ZIP entries.

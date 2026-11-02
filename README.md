@@ -204,6 +204,25 @@ provider execution instant, individual request latencies, production capacity or
 physical host independence. Active polling changes system load. See
 `docs/MILESTONE-64.md` through `docs/MILESTONE-66.md`.
 
+## Milestones 93–98 — Transportable, fail-closed distributed evidence
+
+`simulator/shard_bundle.py` exports each producer's completed shard as a
+deterministic, bounded ZIP with exact-member SHA-256 integrity and its signed
+Ed25519 envelope; private signing keys are excluded. A hostile-bundle validator
+rejects traversal, symlinks, compressed payloads, duplicate/extra entries and
+changed bytes **before extraction**. `simulator/shard_collection.py` imports
+complete, out-of-order archives into a collector-controlled staging directory,
+checks the offline manifest, signing session, pinned host keys and any signed
+clock reports, and publishes with Linux `renameat2(RENAME_NOREPLACE)` only once
+all checks pass. Real CI fixtures feed the imported files to the existing global
+workload auditor, including attack/replay/overwrite rejection tests. See
+`docs/MILESTONE-93.md` through `docs/MILESTONE-98.md`.
+
+**Important:** This is an independently verifiable offline transfer workflow,
+not physical host attestation or proof that separate machines have yet run.
+The collector's pinned keys, launch document and signing challenge must remain
+under the evaluator's control. No secrets or private keys should be bundled.
+
 ## Layout
 
 - `core/`: admission and evidence contracts, policy and safe parsing.

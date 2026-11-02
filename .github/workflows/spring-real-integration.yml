@@ -277,6 +277,21 @@ jobs:
           python3 scripts/package_source.py --verify-reproducible \
             --root . --output "$RUNNER_TEMP/published-source/deroyque-git-source.zip"
 
+  secure-shard-transfer-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify bounded ZIP admission, signed offline collection and no-replace race
+        run: |
+          python3 -m pip install 'cryptography>=42,<50'
+          python3 -m unittest discover -s simulator/tests -p 'test_shard_*.py' -v
+
   simulator-lab-contracts:
     runs-on: ubuntu-latest
     timeout-minutes: 10
