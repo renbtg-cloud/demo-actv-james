@@ -97,7 +97,13 @@ class RotatingJwksFixture:
                 'n': b64(numbers.n.to_bytes((numbers.n.bit_length()+7)//8, 'big')),
                 'e': b64(numbers.e.to_bytes((numbers.e.bit_length()+7)//8, 'big'))}
 
-    def token(self, kid, issuer, audience, scope='activation:write', **overrides):
+    def public_jwk(self, kid):
+        with self._lock:
+            if kid not in self._private:
+                raise ValueError('unknown key')
+            return dict(self._jwk(kid))
+
+    def token(self, kid, issuer, audience, scope='activation:write', headers=None, **overrides):
         with self._lock:
             signing_key = self._private[kid]
         now = int(time.time())
@@ -105,9 +111,13 @@ class RotatingJwksFixture:
                   'iat': now, 'nbf': now - 10, 'exp': now + 600, 'scope': scope}
         claims.update(overrides)
         header = {'alg': 'RS256', 'typ': 'JWT', 'kid': kid}
+        if headers:
+            header.update(headers)
+        if header['alg'] not in ('RS256', 'RS512'):
+            raise ValueError('fixture can only sign RSA JWTs')
         payload = b64(json.dumps(header, separators=(',', ':')).encode()) + '.' + \
             b64(json.dumps(claims, separators=(',', ':')).encode())
-        return payload + '.' + b64(signing_key.sign(payload.encode(), padding.PKCS1v15(), hashes.SHA256()))
+        return payload + '.' + b64(signing_key.sign(payload.encode(), padding.PKCS1v15(), hashes.SHA512() if header['alg']=='RS512' else hashes.SHA256()))
 
     def close(self):
         self._server.shutdown()

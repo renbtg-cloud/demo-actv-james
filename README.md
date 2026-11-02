@@ -4,7 +4,7 @@
 
 This repository contains the **actual experimental source code**, not the older documentation-only preview. The three primary deliverables are the asynchronous activation service, an independent HTTP provider simulator, and a configurable multi-JVM incoming-transaction simulator. They are developed as one evolving system.
 
-**Verified status (2 November 2026, Milestone 20):** nine real Spring CI jobs passed (0/264 integration assertion failures; 264/264 passed) including JWT, independent real Keycloak, optional local Keycloak, PostgreSQL/RabbitMQ/SQLite durable activation, and multi-JVM crash/contended-row adversarial tests: [GitHub Actions run 41475178125](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41475178125). The next JWKS lifecycle tests in Milestone 21 require their own new CI run before integration success can be claimed.
+**Verified status (2 November 2026, Milestone 21):** all nine real Spring integration jobs succeeded, including a 0/31-failure (31/31-passed) JWT security suite exercising RSA JWKS rotation/outage/recovery. See [GitHub Actions run 41489419467](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41489419467). The Milestone 22 access-token hardening and JOSE attack checks are new and **not yet verified by real CI**.
 
 ## Layout
 
@@ -22,16 +22,35 @@ This repository contains the **actual experimental source code**, not the older 
 
 A new GitHub Actions matrix job (`oidc-keycloak`) tests the **real Spring OAuth2 Resource Server** against a disposable Keycloak authorization server. It obtains access tokens from the genuine `client_credentials` endpoint using per-run clients and realms, exercises issuer/audience/scope authorization, then verifies the durable activation through PostgreSQL, RabbitMQ and an independent SQLite provider. The real OIDC job passed **0/26 failures; 26/26 checks passed**. Combined with the seven prior real-Spring jobs, [GitHub Actions run 41469917139](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41469917139) passed **0/238 failures; 238/238 checks passed**. See `docs/MILESTONE-19.md`. This is a CI-only local HTTP development server; **it is not a production IdP deployment**.
 
-## Milestone 21 — JWKS key rotation and issuer-outage security tests (pending real CI)
+## Milestone 21 — JWKS key rotation and issuer-outage security tests (verified)
 
 The existing `jwt-security` integration harness now exercises an actual mutable
 loopback JWKS endpoint: new RS256 key discovery without restarting Spring,
 issuer outage while an unfamiliar key is presented, recovery, an overlap period,
 concurrent signed requests, and issuer/audience denial after rotation.
+This was verified with 0/31 failed integration assertions; 31/31 passed in the JWT CI job.
 The script intentionally **does not claim immediate token revocation** when a
 public key disappears from JWKS: resource-server JWKS caches may retain keys
 until their TTL expires. No production key rotation is configured by this
 fixture. See `docs/MILESTONE-21.md` for the test contract and verification gate.
+
+## Milestone 22 — JWT attack vectors and bounded access-token lifetime (pending real CI)
+
+Spring's real JWT resource server is tested against unsigned `alg=none`,
+RSA-public-material `HS256` confusion, genuinely signed but unapproved `RS512`,
+attacker-controlled `jku` and embedded `jwk` headers. The `jku` test explicitly
+checks that the attacker-controlled URL was **not fetched**. Tokens with missing
+`iat`, `exp` or `sub`, nonpositive lifetimes, future issuance beyond 60 seconds,
+or an excessive (`exp - iat`) lifespan must fail HTTP 401. A small positive
+issuance skew remains permitted. The real Keycloak CI jobs remain in the matrix.
+
+`APP_JWT_MAX_LIFETIME_SECONDS` defaults to **3600** and may be set to an integer
+between **60 and 86400**. Tokens exceeding this limit are rejected even if the
+issuer signs them. This is an intentional compatibility/security choice: align
+it with the authorization server's actual access-token TTL; do not use it for
+refresh tokens. Missing/malformed configuration fails startup. Key rollover
+still does not provide instantaneous revocation of cached old signing keys.
+See [`docs/MILESTONE-22.md`](docs/MILESTONE-22.md).
 
 ## Build and test the real Spring Boot service
 

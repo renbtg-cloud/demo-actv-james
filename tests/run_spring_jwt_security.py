@@ -9,6 +9,7 @@ import argparse, base64, json, os, pathlib, secrets, signal, socket, sqlite3, su
 import tempfile, time, urllib.error, urllib.request, uuid
 from concurrent.futures import ThreadPoolExecutor
 from jwks_rotation_fixture import RotatingJwksFixture, b64
+from jwt_adversarial_vectors import unsigned, hmac_confusion, claims_for
 
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 parser=argparse.ArgumentParser()
@@ -59,6 +60,8 @@ def eventually(callback,seconds=30):
 # A real local HTTP JWKS server; the same signer and endpoint are reused while
 # publishing a second key and simulating an unavailable issuer.
 jwks_fixture=RotatingJwksFixture(tag)
+attacker_jwks=RotatingJwksFixture(tag+'-attacker')
+attacker_kid=attacker_jwks.add_key('forged')
 first_kid=jwks_fixture.add_key('initial')
 issuer=jwks_fixture.uri.rsplit('/keys',1)[0]+'/issuer'
 audience='deroyque-jwt-resource-'+tag
@@ -132,6 +135,41 @@ def run():
     bad_sig=real_read.rsplit('.',1)[0]+'.'+b64(secrets.token_bytes(256))
     check(http('GET','/api/v1/requests/'+str(uuid.uuid4()),auth=bad_sig)[0]==401,
           'invalid RSA signature rejected')
+    path='/api/v1/requests/'+str(uuid.uuid4())
+    good_claims=claims_for(issuer,audience)
+    check(http('GET',path,auth=unsigned(good_claims,first_kid))[0]==401,
+          'unsigned alg=none compact token rejected')
+    public_jwk=jwks_fixture.public_jwk(first_kid)
+    public_bytes=json.dumps(public_jwk,sort_keys=True,separators=(',',':')).encode()
+    check(http('GET',path,auth=hmac_confusion(good_claims,first_kid,public_bytes))[0]==401,
+          'HS256 public-key HMAC algorithm-confusion attempt rejected')
+    check(http('GET',path,auth=token('activation:read',headers={'alg':'RS512'}))[0]==401,
+          'valid RS512 RSA signature refused by RS256-only decoder')
+    forged_jku=attacker_jwks.token(attacker_kid,issuer,audience,'activation:read',
+                                   headers={'jku':attacker_jwks.uri})
+    check(http('GET',path,auth=forged_jku)[0]==401,
+          'attacker JWT with header-supplied jku URL rejected')
+    check(attacker_jwks.get_count==0,
+          'untrusted header jku not fetched by server (SSRF-negative check)')
+    forged_jwk=attacker_jwks.token(attacker_kid,issuer,audience,'activation:read',
+                                   headers={'jwk':attacker_jwks.public_jwk(attacker_kid)})
+    check(http('GET',path,auth=forged_jwk)[0]==401,
+          'attacker-embedded public jwk cannot become trusted signing key')
+    now=int(time.time())
+    check(http('GET',path,auth=token('activation:read',exp=None))[0]==401,
+          'signed token lacking exp rejected (no timeless access)')
+    check(http('GET',path,auth=token('activation:read',iat=None))[0]==401,
+          'signed token lacking iat rejected')
+    check(http('GET',path,auth=token('activation:read',sub=None))[0]==401,
+          'signed token lacking subject rejected')
+    check(http('GET',path,auth=token('activation:read',iat=now-120,exp=now+3601))[0]==401,
+          'signed token exceeding configured maximum lifetime rejected')
+    check(http('GET',path,auth=token('activation:read',iat=now+300,nbf=now-10,exp=now+600))[0]==401,
+          'signed token issued too far in the future rejected')
+    check(http('GET',path,auth=token('activation:read',iat=now,exp=now))[0]==401,
+          'signed token with nonpositive lifetime rejected')
+    check(http('GET',path,auth=token('activation:read',iat=now+25,nbf=now-10,exp=now+600))[0]==404,
+          'small positive issuance skew tolerated within documented 60-second window')
     check(http('GET','/api/v1/requests/'+str(uuid.uuid4()),auth=token('activation:read',iss='https://wrong-issuer.invalid'))[0]==401,
           'wrong issuer rejected')
     check(http('GET','/api/v1/requests/'+str(uuid.uuid4()),auth=token('activation:read',aud=['other-api']))[0]==401,
@@ -224,7 +262,7 @@ def main():
                 except subprocess.TimeoutExpired:
                     os.killpg(p.pid,signal.SIGKILL);p.wait(timeout=5)
             f.close()
-        jwks_fixture.close();tmp.cleanup()
+        jwks_fixture.close();attacker_jwks.close();tmp.cleanup()
         passed=sum(x['passed'] for x in result['checks']);failed=len(result['checks'])-passed
         result.update({'failed':failed,'passed':passed,'total':len(result['checks']),'exit_code':code})
         print(f'JWT_SECURITY_RESULT FAILURES {failed}/{len(result["checks"])} PASSED {passed}/{len(result["checks"])}',flush=True)

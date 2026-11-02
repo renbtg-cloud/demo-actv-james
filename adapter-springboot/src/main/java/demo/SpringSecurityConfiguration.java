@@ -1,6 +1,8 @@
 package demo;
 
 import java.net.URI;
+import java.time.Instant;
+import java.time.Duration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -43,6 +45,38 @@ public class SpringSecurityConfiguration {
     return uri;
   }
 
+  private static long maximumTokenLifetimeSeconds(){
+    String raw=System.getenv().getOrDefault("APP_JWT_MAX_LIFETIME_SECONDS","3600");
+    try {
+      long seconds=Long.parseLong(raw);
+      if(seconds<60 || seconds>86400)
+        throw new IllegalArgumentException("APP_JWT_MAX_LIFETIME_SECONDS must be between 60 and 86400");
+      return seconds;
+    } catch(NumberFormatException invalid){
+      throw new IllegalArgumentException("APP_JWT_MAX_LIFETIME_SECONDS must be a valid integer",invalid);
+    }
+  }
+
+  /** Access-token profile: no timeless, future-issued, or excessive-lifetime JWTs.
+   * Nimbus already checks the RS256 signature; default validators check issuer,
+   * expiration and not-before with their usual skew allowance.
+   */
+  static OAuth2TokenValidator<Jwt> accessTokenProfile(long maxLifetimeSeconds){
+    return token->{
+      Instant issued=token.getIssuedAt();
+      Instant expires=token.getExpiresAt();
+      String subject=token.getSubject();
+      if(issued==null || expires==null || subject==null || subject.isBlank())
+        return OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token","JWT requires iat, exp and sub",null));
+      Instant now=Instant.now();
+      if(issued.isAfter(now.plusSeconds(60)) || !expires.isAfter(issued) ||
+         Duration.between(issued,expires).compareTo(Duration.ofSeconds(maxLifetimeSeconds))>0 ||
+         (token.getNotBefore()!=null && token.getNotBefore().isAfter(expires)))
+        return OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token","JWT time claim policy mismatch",null));
+      return OAuth2TokenValidatorResult.success();
+    };
+  }
+
   @Bean
   SecurityFilterChain deroyqueHttpSecurity(HttpSecurity http) throws Exception {
     http.csrf(csrf->csrf.disable());
@@ -76,7 +110,7 @@ public class SpringSecurityConfiguration {
     OAuth2TokenValidator<Jwt> aud=token-> token.getAudience()!=null && token.getAudience().contains(audience)
       ? OAuth2TokenValidatorResult.success()
       : OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token","JWT audience mismatch",null));
-    decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(JwtValidators.createDefaultWithIssuer(issuer),aud));
+    decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(JwtValidators.createDefaultWithIssuer(issuer),aud,accessTokenProfile(maximumTokenLifetimeSeconds())));
     return decoder;
   }
 }
