@@ -57,6 +57,17 @@ gate. See `docs/MILESTONE-72.md` through `docs/MILESTONE-77.md` and the simulato
 README for workflow and limitations. The new CI must pass before these tests are
 considered remotely validated.
 
+## Milestones 78–80 — Live clock transport and mathematical oracle
+
+An additional regression exercises a real disposable loopback clock service and
+**two independent Python probe-client processes**. It verifies out-of-order
+collector input, injected timestamp corruption and fail-closed reference outage.
+A seeded 512-scenario arithmetic oracle independently tests that the true
+constructed UTC offset remains inside reported conservative bounds, while a
+contradictory offset hypothesis must be rejected. These are **local** transport
+and mathematical demonstrations, not an authenticated remote-host measurement.
+See `docs/MILESTONE-78.md` through `docs/MILESTONE-80.md`.
+
 ## Milestones 39–43 — One-clock ingress witness and real distributed-workload verification
 
 An **optional loopback-only HTTP gateway observer** now distributes admissions to
