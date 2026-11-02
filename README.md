@@ -223,6 +223,14 @@ not physical host attestation or proof that separate machines have yet run.
 The collector's pinned keys, launch document and signing challenge must remain
 under the evaluator's control. No secrets or private keys should be bundled.
 
+## Milestone 99 — Refuse same-kernel host masquerading at collection
+
+The signed offline importer exposes `--require-distinct-kernels`: missing or
+repeated kernel fingerprints reject a multi-host claim *before* results are
+published. All accepted reports carry an explicit host-provenance category.
+Distinct self-reported fingerprints remain **unverified**, never a claim of
+physical host independence. See `docs/MILESTONE-99.md`.
+
 ## Layout
 
 - `core/`: admission and evidence contracts, policy and safe parsing.

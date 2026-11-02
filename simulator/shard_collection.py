@@ -18,6 +18,7 @@ import sys
 import tempfile
 
 from distributed_integrity import verify_launch
+from host_provenance import evaluate_provenance
 from host_session import read_json, validate, digest
 from host_signed_evidence import verify_envelopes
 from shard_bundle import inspect_archive, unpack
@@ -36,7 +37,7 @@ def _publish_no_replace(staged, destination):
         raise OSError(error,os.strerror(error),str(destination))
 
 
-def collect(archives, destination, pins, session, manifest):
+def collect(archives, destination, pins, session, manifest, require_distinct_kernels=False):
     if isinstance(pins,(str,pathlib.Path)):pins=read_json(pins)
     if isinstance(session,(str,pathlib.Path)):session=read_json(session)
     if isinstance(manifest,(str,pathlib.Path)):manifest=read_json(manifest,2*1024*1024)
@@ -76,6 +77,9 @@ def collect(archives, destination, pins, session, manifest):
                             'members':len(evidence['members'])})
         launch_errors=verify_launch(manifest,summaries)
         if launch_errors:raise ValueError('Shards disagree with collector launch: '+'; '.join(launch_errors))
+        host_evidence=evaluate_provenance([item.get('host_environment') for item in summaries], manifest['run_id'])
+        if require_distinct_kernels and host_evidence['status'] != 'DISTINCT_KERNEL_REPORTS_UNVERIFIED':
+            raise ValueError('Independent kernels not evidenced: '+host_evidence['status'])
         if clocks and len(clocks)!=count:
             raise ValueError('Partial clock evidence set cannot be accepted')
         signed,errors=verify_envelopes(pins,reports,folders,manifest['run_id'],
@@ -84,6 +88,7 @@ def collect(archives, destination, pins, session, manifest):
         if errors:raise ValueError('Pinned Ed25519 verification failed: '+'; '.join(errors))
         report={'schema_version':1,'run_id':manifest['run_id'],
                 'session_sha256':session_hash,'signed_host_evidence':signed,
+                'host_evidence':host_evidence,
                 'bundles':entries,'scope':'SIGNED_TRANSPORT_IMPORT_NOT_GLOBAL_WORKLOAD_OR_PHYSICAL_HOST_PROOF'}
         with (stage/'collection.json').open('x',encoding='utf-8') as f:
             json.dump(report,f,sort_keys=True,indent=2)
@@ -101,10 +106,13 @@ def main(argv=None):
     parser.add_argument('--session',required=True,type=pathlib.Path)
     parser.add_argument('--manifest',required=True,type=pathlib.Path)
     parser.add_argument('--output-dir',required=True,type=pathlib.Path)
+    parser.add_argument('--require-distinct-kernels',action='store_true',
+                        help='Reject missing or same-kernel self-reports (NOT physical attestation)')
     parser.add_argument('bundles',nargs='+',type=pathlib.Path)
     args=parser.parse_args(argv)
     try:
-        report=collect(args.bundles,args.output_dir,args.pins,args.session,args.manifest)
+        report=collect(args.bundles,args.output_dir,args.pins,args.session,args.manifest,
+                       require_distinct_kernels=args.require_distinct_kernels)
         print(json.dumps({'status':report['scope'],'shards':len(report['bundles']),
                           'run_id':report['run_id']},sort_keys=True))
         return 0

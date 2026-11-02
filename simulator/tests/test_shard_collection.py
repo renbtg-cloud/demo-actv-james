@@ -117,6 +117,47 @@ class ShardCollectionTests(unittest.TestCase):
             self.accept(archives=[self.archives[0],archive])
         self.assertFalse((self.root/'collected').exists())
 
+    def signed_provenance_archives(self, fingerprints):
+        out=[]
+        for i,fingerprint in enumerate(fingerprints):
+            summary=self.folders[i]/'summary.json'
+            document=json.loads(summary.read_text())
+            document['host_environment']={'schema_version':1,'kernel_fingerprint':fingerprint}
+            summary.write_text(json.dumps(document))
+            signed=self.root/f'provenance-signed-{i}.json'
+            signed.write_text(json.dumps(make_envelope(self.folders[i],'signed-ci-run',
+                f'host-{i}',i,self.privates[i],self.session,self.manifest,self.pins)))
+            archive=self.root/f'provenance-{i}.zip'
+            bundle(self.folders[i],signed,archive)
+            out.append(archive)
+        return out
+
+    def test_same_kernel_evidence_fails_explicit_isolation_gate(self):
+        archives=self.signed_provenance_archives(['a'*64,'a'*64])
+        with self.assertRaisesRegex(ValueError,'SAME_KERNEL_OBSERVED'):
+            collect(archives,self.root/'collected',self.pins,self.session,self.manifest,
+                    require_distinct_kernels=True)
+        self.assertFalse((self.root/'collected').exists())
+
+    def test_missing_kernel_evidence_fails_explicit_isolation_gate(self):
+        with self.assertRaisesRegex(ValueError,'UNKNOWN_MISSING'):
+            collect(self.archives,self.root/'collected',self.pins,self.session,self.manifest,
+                    require_distinct_kernels=True)
+
+    def test_distinct_signed_kernel_reports_are_not_hardware_attestation(self):
+        archives=self.signed_provenance_archives(['a'*64,'b'*64])
+        result=collect(archives,self.root/'collected',self.pins,self.session,self.manifest,
+                       require_distinct_kernels=True)
+        self.assertEqual(result['host_evidence']['status'],'DISTINCT_KERNEL_REPORTS_UNVERIFIED')
+        self.assertIn('not',result['host_evidence']['measurement_note'].lower())
+
+    def test_same_kernel_import_permitted_when_unverified_but_explicitly_flagged(self):
+        archives=self.signed_provenance_archives(['a'*64,'a'*64])
+        result=self.accept(archives=archives)
+        self.assertEqual(result['host_evidence']['status'],'SAME_KERNEL_OBSERVED')
+        self.assertEqual(result['signed_host_evidence']['status'],
+                         'ALL_PINNED_SIGNING_KEYS_VERIFIED_NOT_HOST_ATTESTATION')
+
     def test_second_acceptance_cannot_overwrite_first(self):
         report=self.accept()
         with self.assertRaisesRegex(ValueError,'Destination'):

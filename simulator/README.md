@@ -323,3 +323,9 @@ server/provider state auditors on the verified imported shard directories. The
 ZIP deliberately holds no private keys. Linux `renameat2` is required for
 atomic no-replace publication. Keep incoming and trusted directories
 separately controlled. The integrity verifier rejects compressed ZIP entries.
+
+For runs that are intended to use multiple kernels, pass
+`--require-distinct-kernels` to `shard_collection.py`. This rejects missing or
+matching run-salted kernel boot IDs, but differing self-reports are not
+cryptographic hardware attestation. Keep the physical host inventory and
+independent clock reference as separate experimental records.
