@@ -40,6 +40,14 @@ Only UTF-8 JSON is supported; contradictory/malformed charset parameters and
 non-UTF-8 declarations return 415 before any database writes. See
 [Milestone 24](docs/MILESTONE-24.md).
 
+## Milestone 27 — Reliable CI bootstrap on ephemeral Ubuntu runners
+
+A failed Keycloak CI job on GitHub-hosted Ubuntu 26.04 traced to a **third-party
+Microsoft apt source without a Release file**, before any Deroyque code ran.
+The workflow now disables only source files containing that unused endpoint
+on the disposable runner; `apt-get update` still fails for essential repository
+errors. See [Milestone 27](docs/MILESTONE-27.md).
+
 ## Milestone 26 — Cross-encoding Unicode idempotency
 
 A real Spring/SQLite-provider test proves an escaped surrogate pair and an
