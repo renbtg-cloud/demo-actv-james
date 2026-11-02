@@ -40,6 +40,14 @@ Only UTF-8 JSON is supported; contradictory/malformed charset parameters and
 non-UTF-8 declarations return 415 before any database writes. See
 [Milestone 24](docs/MILESTONE-24.md).
 
+## Milestone 32 — Independent consumer verification of published ZIP
+
+A **separate CI runner**, dependent on successful source publication, downloads
+the uploaded artifact and compares every file byte against a fresh checkout of
+the same commit, in addition to validating its internal manifest. This catches
+self-consistent but wrong ZIP contents and accidental upload/download changes.
+See [Milestone 32](docs/MILESTONE-32.md).
+
 ## Milestone 31 — Git-tracked-only reproducible source artifact
 
 A separate GitHub Actions job now builds a deterministic ZIP using **only Git-

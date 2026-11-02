@@ -207,3 +207,25 @@ jobs:
           path: ${{ runner.temp }}/deroyque-git-source.zip
           if-no-files-found: error
           retention-days: 7
+
+  verify-published-source:
+    needs: source-archive
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download the independently published source ZIP
+        uses: actions/download-artifact@v4
+        with:
+          name: deroyque-verified-source
+          path: ${{ runner.temp }}/published-source
+      - name: Verify published ZIP against a fresh checkout of the same commit
+        run: |
+          python3 -m unittest discover -s tests -p test_source_package.py -v
+          python3 scripts/package_source.py --verify-checkout \
+            --root . --output "$RUNNER_TEMP/published-source/deroyque-git-source.zip"

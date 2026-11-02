@@ -6,7 +6,7 @@ import tempfile
 import unittest
 import zipfile
 sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1]/'scripts'))
-from package_source import make_archive,verify_archive
+from package_source import make_archive,verify_archive,verify_against_checkout
 
 
 class SourcePackageTest(unittest.TestCase):
@@ -36,6 +36,17 @@ class SourcePackageTest(unittest.TestCase):
         original=self.output.read_bytes()
         make_archive(self.root,self.output)
         self.assertEqual(self.output.read_bytes(),original)
+
+    def test_independent_checkout_exact_match(self):
+        make_archive(self.root,self.output)
+        self.assertEqual(verify_against_checkout(self.root,self.output)['files'],2)
+
+    def test_second_checkout_detects_changed_tracked_bytes(self):
+        make_archive(self.root,self.output)
+        (self.root/'README.md').write_text('different source content\n')
+        # Archive self-check still passes; independent Git-worktree comparison fails.
+        self.assertEqual(verify_archive(self.output)['files'],2)
+        with self.assertRaises(ValueError):verify_against_checkout(self.root,self.output)
 
     def test_tampered_payload_detected(self):
         make_archive(self.root,self.output)

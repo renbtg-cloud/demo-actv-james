@@ -84,14 +84,32 @@ def verify_archive(path):
     return {'files':len(expected),'sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
 
 
+def verify_against_checkout(root,archive):
+    """Independent runner comparison: prove archive bytes equal this checkout,
+    not merely that attacker-controlled data matches attacker-controlled hashes.
+    """
+    root=root.resolve()
+    reference=set(tracked_files(root))
+    result=verify_archive(archive)
+    with zipfile.ZipFile(archive,'r') as z:
+        found=set(z.namelist())-{MANIFEST,META}
+        if found!=reference:raise ValueError('archive file set diverges from Git checkout')
+        for name in sorted(reference):
+            if hashlib.sha256((root/name).read_bytes()).digest()!=hashlib.sha256(z.read(name)).digest():
+                raise ValueError('archive bytes differ from independent checkout')
+    return result
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--root',type=Path,default=Path(__file__).resolve().parents[1])
     p.add_argument('--output',type=Path,required=True)
     p.add_argument('--verify-only',action='store_true')
+    p.add_argument('--verify-checkout',action='store_true')
     args=p.parse_args()
     try:
-        result=verify_archive(args.output) if args.verify_only else make_archive(args.root,args.output)
+        result=(verify_against_checkout(args.root,args.output) if args.verify_checkout else
+                verify_archive(args.output) if args.verify_only else make_archive(args.root,args.output))
         print('SOURCE_PACKAGE_RESULT FAILURES 0/'+str(result['files'])+
               ' PASSED '+str(result['files'])+'/'+str(result['files'])+
               ' sha256='+result['sha256'])
