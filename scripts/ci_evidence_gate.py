@@ -86,7 +86,8 @@ def validate(scenario,result):
                 result.get('independent_ed25519_verified') is not True or
                 result.get('terminal_signed_lineage_verified') is not True or
                 result.get('uncontaminated_schema_verified') is not True or
-                result.get('provider_index_and_time_verified') is not True):
+                result.get('provider_index_and_time_verified') is not True or
+                result.get('payload_contract_verified') is not True):
             raise ValueError('real gateway/Spring/provider per-identity end-to-end proof absent')
     elif scenario=='gateway-trials':
         c=result.get('comparison')

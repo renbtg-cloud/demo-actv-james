@@ -90,6 +90,18 @@ Never interpret signed evidence as proof that a dishonest external provider
 is truthful. See `docs/MILESTONE-54.md` through `docs/MILESTONE-60.md`.
 The results of a new CI run, not local tests alone, determine real acceptance.
 
+## Milestones 61–63 — Race-aware immutable payload and fingerprint proof
+
+The global producer auditor now reports the *observed* winning payload variant
+for every unique idempotency identity. The test does not infer a winner from
+scheduled request order: independent JVMs can reorder HTTP arrival. The
+PostgreSQL auditor then independently verifies the stored customer/product
+fields against the winning variant and recomputes the exact Java SHA-256
+fingerprint in Python. Missing, swapped, overwritten or falsely fingerprinted
+payloads fail the new `payload_contract_verified` CI gate. See
+`docs/MILESTONE-61.md` through `docs/MILESTONE-63.md`. These are isolated
+laboratory checks, not universal production payload semantics.
+
 ## Layout
 
 - `core/`: admission and evidence contracts, policy and safe parsing.

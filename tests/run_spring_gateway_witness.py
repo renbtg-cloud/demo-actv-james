@@ -31,7 +31,8 @@ from gateway_identity_audit import postgres_identity_query, audit_postgres_rows,
 from gateway_signature_audit import signed_tokens_query, audit_signed_rows
 from gateway_lineage_audit import (
     postgres_lineage_query, audit_lineage_rows, schema_cardinality_query,
-    audit_schema_cardinality, audit_sqlite_index_and_proof_times)
+    audit_schema_cardinality, audit_sqlite_index_and_proof_times,
+    postgres_payload_query, audit_payload_rows)
 
 P = argparse.ArgumentParser(description=__doc__)
 P.add_argument('--boot-jar', type=Path, required=True)
@@ -232,6 +233,11 @@ def execute(directory):
         check(times['indexed_effect_proofs']==W['keys'],
               'every independent SQLite idempotency index and signed timestamp binds to one effect')
         RESULT['provider_index_and_time_verified']=True
+        payload=audit_payload_rows(sql(postgres_payload_query(SCHEMA,RUN)),RUN,W['keys'],
+                                  result['winning_variants'])
+        check(payload['durable_payload_fingerprints_verified']==W['keys'],
+              'every accepted customer/product and its SHA-256 fingerprint match independent producer contract')
+        RESULT['payload_contract_verified']=True
         RESULT['business_effects']=effects
         RESULT['durable_requests']=durable
         RESULT['signed_attestations']=signed

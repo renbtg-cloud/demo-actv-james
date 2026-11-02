@@ -124,3 +124,50 @@ def audit_sqlite_index_and_proof_times(database, signed_rows, run, count):
     if seen!=expected or index_rows!=count:
         raise ValueError('provider index/effect identity mismatch')
     return {'indexed_effect_proofs':count,'time_scope':'single_host_provider_clock'}
+
+
+def postgres_payload_query(schema, run):
+    """Read exact stored public admission data for the deterministic lab inputs."""
+    _safe(schema,run)
+    return f"""SELECT r.idem_key,r.customer_id,r.product_code,r.fingerprint
+        FROM {schema}.p9_requests r
+        WHERE left(r.idem_key,length('{run}-'))='{run}-'
+        ORDER BY r.idem_key"""
+
+
+def audit_payload_rows(rows, run, count, winners):
+    """Independently recompute PublicRequests SHA256 customer-NUL-product.
+
+    The verified producer responses determine which variant won each key.
+    Schedule order alone cannot prove arrival order across concurrent JVMs.
+    Any later conflicting payload must not replace the observed winner.
+    This test is not a generic production business-payload validator.
+    """
+    import hashlib
+    expected=expected_keys(run,count)
+    if (not isinstance(winners,dict) or len(winners)!=count or
+            any(str(i) not in winners or type(winners[str(i)]) is not int or
+                winners[str(i)] not in (0,1) for i in range(count))):
+        raise ValueError('missing independently reconciled winner variants')
+    if not isinstance(rows,str):raise ValueError('invalid public payload rows')
+    seen=set()
+    for line in rows.splitlines():
+        cols=line.split('|')
+        if len(cols)!=4:raise ValueError('malformed public payload row')
+        key,customer,product,fingerprint=cols
+        if key not in expected or key in seen:
+            raise ValueError('unknown or duplicated payload identity')
+        # Strip only the exact trusted prefix; key-space is based on slot numbers.
+        slot=int(key[len(run)+1:]) if key[len(run)+1:].isdecimal() else -1
+        if slot<0 or slot>=count or key!=f'{run}-{slot}':
+            raise ValueError('invalid workload slot')
+        variant=winners[str(slot)]
+        if (customer!=f'c-{slot}'+('-conflict' if variant else '') or
+                product!=('different' if variant else 'standard')):
+            raise ValueError('accepted conflicting payload or wrong materialized data')
+        digest=hashlib.sha256((customer+'\0'+product).encode('utf-8')).hexdigest()
+        if fingerprint!='public:'+digest:
+            raise ValueError('wrong durable idempotency fingerprint')
+        seen.add(key)
+    if seen!=expected:raise ValueError('missing public admission payload')
+    return {'durable_payload_fingerprints_verified':count}

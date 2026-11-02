@@ -48,7 +48,8 @@ def run():
                   one.get('independent_ed25519_verified') is True and
                   one.get('terminal_signed_lineage_verified') is True and
                   one.get('uncontaminated_schema_verified') is True and
-                  one.get('provider_index_and_time_verified') is True,
+                  one.get('provider_index_and_time_verified') is True and
+                  one.get('payload_contract_verified') is True,
                   f'trial {index+1}/3 independently reconciled signed and remote effects')
             sample=json.loads(merged.read_text())
             samples.append(sample);identities.append(sample.get('run_id'))

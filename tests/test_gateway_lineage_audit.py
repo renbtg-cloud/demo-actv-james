@@ -112,3 +112,50 @@ class LineageAudits(unittest.TestCase):
             self.assertEqual(db.execute('SELECT COUNT(*) FROM idem_index').fetchone()[0],2)
 
 if __name__=='__main__':unittest.main()
+
+class PublicAdmissionPayloadTests(unittest.TestCase):
+    @staticmethod
+    def _rows():
+        from hashlib import sha256
+        return '\n'.join(f'{RUN}-{i}|c-{i}|standard|public:'+
+                         sha256(f'c-{i}\0standard'.encode()).hexdigest() for i in range(2))
+
+    def test_baseline_payload_and_fingerprints(self):
+        from gateway_lineage_audit import audit_payload_rows,postgres_payload_query
+        self.assertEqual(audit_payload_rows(self._rows(),RUN,2,{'0':0,'1':0})['durable_payload_fingerprints_verified'],2)
+        q=postgres_payload_query('gw_proof',RUN)
+        self.assertIn('r.fingerprint',q)
+        self.assertIn('r.customer_id',q)
+        self.assertNotIn('UPDATE ',q)
+
+    def test_conflicting_payload_and_digest_mutations_fail(self):
+        from gateway_lineage_audit import audit_payload_rows
+        good=self._rows()
+        for label,altered in {
+            'wrong-product':good.replace('standard','different',1),
+            'wrong-customer':good.replace('c-0','c-0-conflict',1),
+            'wrong-fingerprint':good.replace('public:','public:bad',1),
+            'duplicate':good.replace(f'{RUN}-1',f'{RUN}-0'),
+            'missing':good.splitlines()[0],
+            'nondecimal-slot':good.replace(f'{RUN}-1',f'{RUN}-01'),
+            'unexpected-extra':good+'\nother|other|other|other'
+        }.items():
+            with self.subTest(label=label),self.assertRaises(ValueError):
+                audit_payload_rows(altered,RUN,2,{'0':0,'1':0})
+
+class ArrivalOrderPayloadTests(unittest.TestCase):
+    def test_variant_one_can_win_if_it_arrives_first(self):
+        from gateway_lineage_audit import audit_payload_rows
+        from hashlib import sha256
+        customer='c-0-conflict';product='different'
+        fingerprint='public:'+sha256((customer+'\0'+product).encode()).hexdigest()
+        row=f'{RUN}-0|{customer}|{product}|{fingerprint}'
+        self.assertEqual(audit_payload_rows(row,RUN,1,{'0':1})['durable_payload_fingerprints_verified'],1)
+        with self.assertRaises(ValueError):audit_payload_rows(row,RUN,1,{'0':0})
+
+    def test_winner_vector_is_complete_and_literal(self):
+        from gateway_lineage_audit import audit_payload_rows
+        rows=PublicAdmissionPayloadTests._rows()
+        for invalid in ({'0':0}, {'0':0,'1':True}, {'0':0,'1':2}, {'0':0,'1':0,'2':0}):
+            with self.subTest(invalid=invalid),self.assertRaises(ValueError):
+                audit_payload_rows(rows,RUN,2,invalid)

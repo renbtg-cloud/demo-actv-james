@@ -187,6 +187,7 @@ def merge(folders,verify_state=False,await_done_seconds=0,timeout_ms=8000,token=
         'http_statuses':statuses,
         'latency_ms':{str(q):duration_ms_to_percentile(latencies,q) for q in (50,90,95,99)},
         'state_verification_errors':state_errors,'verified_states':states,
+        'winning_variants':{str(slot):variant for slot,variant in sorted(winner.items())},
         'global_invariant_violations':violations,'harness_errors':errors,
         'per_shard':sorted(chunks,key=lambda c:c['shard']),
         'host_evidence':host_evidence,
