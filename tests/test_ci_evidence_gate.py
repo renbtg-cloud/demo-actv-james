@@ -17,8 +17,8 @@ def report(scenario):
     elif scenario in ('oidc-keycloak','local-keycloak'):d.update(issuer_verified=True,signed_provider_effect_verified=True)
     elif scenario in ('gateway-witness','gateway-soak'):
         soak=scenario=='gateway-soak';n=240 if soak else 80;k=60 if soak else 20
-        d.update(completed=True,profile='soak' if soak else 'short',workload_duration_seconds=120 if soak else 0,business_effects=k,durable_requests=k,signed_attestations=k,identity_graph_verified=True,provider_per_key_verified=True,independent_ed25519_verified=True, terminal_signed_lineage_verified=True, uncontaminated_schema_verified=True, provider_index_and_time_verified=True,payload_contract_verified=True,terminal_progress_verified=True, terminal_progress={'observed_done':k,'observed_failed':0}, measurement={'global_recorded_posts':n,'global_throughput_qps':50.0,'gateway_witness':{'total_http_responses':n,'backend_count':2},'verified_states':{'DONE':k}})
-    elif scenario=='gateway-trials':d.update(completed=True,comparison={'trial_count':3,'backend_count':2,'host_provenance_status':'SAME_KERNEL_OBSERVED','median_gateway_post_qps':30.0,'median_absolute_deviation':1.0,'median_observed_convergence_ms':120.0,'convergence_mad_ms':10.0,'workload_sha256':'a'*64})
+        d.update(completed=True,profile='soak' if soak else 'short',workload_duration_seconds=120 if soak else 0,business_effects=k,durable_requests=k,signed_attestations=k,identity_graph_verified=True,provider_per_key_verified=True,independent_ed25519_verified=True, terminal_signed_lineage_verified=True, uncontaminated_schema_verified=True, provider_index_and_time_verified=True,payload_contract_verified=True,terminal_progress_verified=True, terminal_progress={'observed_done':k,'observed_failed':0,'observed_convergence_ms':1500.0,'convergence_lower_bound_ms':1000.0,'convergence_upper_bound_ms':2000.0,'convergence_bound_width_ms':1000.0,'max_observed_sampling_gap_ms':500.0,'sampling_uncertainty_ms':500.0,'max_sql_round_trip_ms':200.0}, measurement={'global_recorded_posts':n,'global_throughput_qps':50.0,'gateway_witness':{'total_http_responses':n,'backend_count':2},'verified_states':{'DONE':k}})
+    elif scenario=='gateway-trials':d.update(completed=True,comparison={'trial_count':3,'backend_count':2,'host_provenance_status':'SAME_KERNEL_OBSERVED','median_gateway_post_qps':30.0,'median_absolute_deviation':1.0,'median_observed_convergence_ms':120.0,'convergence_mad_ms':10.0,'median_convergence_lower_bound_ms':60.0,'median_convergence_upper_bound_ms':180.0,'workload_sha256':'a'*64})
     elif scenario=='same-row-contention':d.update(completed=True,business_effects=1)
     else:d['cases']=[{'case':'real'}]
     return d
@@ -88,6 +88,29 @@ class EvidenceGateTest(unittest.TestCase):
             with self.assertRaises(ValueError):validate(scenario,data)
             data=report(scenario);data['terminal_progress']['observed_done']-=1
             with self.assertRaises(ValueError):validate(scenario,data)
+
+    def test_reject_fabricated_or_unbounded_convergence_evidence(self):
+        for scenario in ('gateway-witness','gateway-soak'):
+            for key,value in (('convergence_lower_bound_ms',1600),
+                              ('convergence_upper_bound_ms',1400),
+                              ('convergence_bound_width_ms',100),
+                              ('max_observed_sampling_gap_ms',50000),
+                              ('sampling_uncertainty_ms',float('nan')),
+                              ('max_sql_round_trip_ms',25000),
+                              ('observed_convergence_ms',float('inf'))):
+                with self.subTest(scenario=scenario,key=key):
+                    data=report(scenario)
+                    data['terminal_progress'][key]=value
+                    with self.assertRaises(ValueError):validate(scenario,data)
+
+    def test_reject_fabricated_trial_bounds(self):
+        for key,value in (('median_convergence_lower_bound_ms',121.0),
+                          ('median_convergence_upper_bound_ms',119.0),
+                          ('median_convergence_lower_bound_ms',float('nan')),
+                          ('median_convergence_upper_bound_ms',None)):
+            with self.subTest(key=key,value=value):
+                data=report('gateway-trials');data['comparison'][key]=value
+                with self.assertRaises(ValueError):validate('gateway-trials',data)
 
     def test_repeated_convergence_statistics_mandatory(self):
         data=report('gateway-trials');data['comparison']['convergence_mad_ms']=None

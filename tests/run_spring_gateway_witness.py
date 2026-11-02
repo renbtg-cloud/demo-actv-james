@@ -251,7 +251,13 @@ def execute(directory):
               convergence['observed_failed']==0 and
               convergence['observed_admitted']==W['keys'] and
               convergence['samples']>=2 and
-              convergence['sampling_uncertainty_ms']>=0,
+              convergence['sampling_uncertainty_ms']>=0 and
+              convergence['convergence_lower_bound_ms']<=convergence['observed_convergence_ms']<=
+                 convergence['convergence_upper_bound_ms'] and
+              convergence['convergence_bound_width_ms']<=
+                 (20_000 if A.profile=='soak' else 12_000) and
+              convergence['max_observed_sampling_gap_ms']<=
+                 (20_000 if A.profile=='soak' else 12_000),
               'separate bounded monotonic PostgreSQL polling observed every key terminal')
         RESULT['terminal_progress_verified']=True
         RESULT['terminal_progress']=convergence

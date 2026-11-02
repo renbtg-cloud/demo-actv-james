@@ -20,6 +20,48 @@ class TraceTests(unittest.TestCase):
         self.assertEqual(d['sampling_uncertainty_ms'],1)
         self.assertEqual(d['samples'],4)
         self.assertEqual(d['all_done_observed_ms'],3)
+        self.assertEqual(d['convergence_lower_bound_ms'],1)
+        self.assertEqual(d['convergence_upper_bound_ms'],3)
+        self.assertEqual(d['convergence_bound_width_ms'],2)
+        self.assertEqual(d['max_observed_sampling_gap_ms'],1)
+
+    def test_same_poll_first_admission_and_terminal_completion(self):
+        t=CompletionTrace(1)
+        t.observe('0|0|0',1_000_000)
+        t.observe('1|1|0',6_000_000)
+        r=t.report()
+        self.assertEqual(r['convergence_lower_bound_ms'],0)
+        self.assertEqual(r['convergence_upper_bound_ms'],5)
+        self.assertEqual(r['observed_convergence_ms'],0)
+
+    def test_slow_sql_round_trip_does_not_invalidate_bounds(self):
+        t=CompletionTrace(1)
+        # The zero snapshot could occur at 1ms even if we receive it at 5ms;
+        # the DONE snapshot could occur as early as 12ms even when read at 20ms.
+        t.observe('0|0|0',5_000_000,query_start_ns=1_000_000)
+        t.observe('1|0|0',11_000_000,query_start_ns=10_000_000)
+        t.observe('1|1|0',20_000_000,query_start_ns=12_000_000)
+        r=t.report()
+        self.assertEqual(r['convergence_lower_bound_ms'],0)
+        self.assertEqual(r['convergence_upper_bound_ms'],19)
+        self.assertEqual(r['max_sql_round_trip_ms'],8)
+
+    def test_query_windows_cannot_overlap_or_reverse(self):
+        t=CompletionTrace(1)
+        with self.assertRaises(ValueError):t.observe('0|0|0',10,query_start_ns=11)
+        t.observe('0|0|0',10,query_start_ns=8)
+        with self.assertRaises(ValueError):t.observe('1|1|0',20,query_start_ns=9)
+
+    def test_irregular_poll_intervals_disclosed(self):
+        t=CompletionTrace(2)
+        for ns, row in ((1_000_000,'0|0|0'),(3_000_000,'1|0|0'),
+                        (103_000_000,'2|1|0'),(108_000_000,'2|2|0')):
+            t.observe(row,ns)
+        r=t.report()
+        self.assertEqual(r['max_observed_sampling_gap_ms'],100)
+        self.assertEqual(r['convergence_lower_bound_ms'],100)
+        self.assertEqual(r['convergence_upper_bound_ms'],107)
+        self.assertEqual(r['convergence_bound_width_ms'],7)
 
     def test_reject_partial_terminal(self):
         t=CompletionTrace(2)

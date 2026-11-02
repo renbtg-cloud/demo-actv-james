@@ -12,6 +12,18 @@ real-Spring trials (**0/15 failures; 15/15 passed**). See
 Milestones 51–53 below add stronger per-identity proofs and require fresh CI
 verification before being treated as accepted.
 
+## Milestones 67–69 — Interval-censored completion time, sampling health and CI-proofed trial bounds
+
+The terminal PostgreSQL observer now reports **interval-censored lower and upper bounds**
+for the time from first actual admission to complete database visibility, rather
+than interpreting the difference between two poll timestamps as exact latency.
+It separately reports the largest sampling gap and refuses excessively imprecise
+measurements in the real Spring witness. The three repeated trials record median
+lower and upper bounds, with strict CI evidence checks and adversarial mutation
+regressions. The bounds are about the observed SQL state and include the cost of
+polling, not per-request provider latency or a production SLO. See
+`docs/MILESTONE-67.md` through `docs/MILESTONE-69.md`.
+
 ## Milestones 39–43 — One-clock ingress witness and real distributed-workload verification
 
 An **optional loopback-only HTTP gateway observer** now distributes admissions to

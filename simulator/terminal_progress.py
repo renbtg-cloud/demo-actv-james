@@ -36,9 +36,13 @@ class CompletionTrace:
         self.max_samples = max_samples
         self.samples = []
 
-    def observe(self, text, ns):
+    def observe(self, text, ns, query_start_ns=None):
         if type(ns) is not int or ns <= 0:
             raise ValueError('invalid monotonic time')
+        if query_start_ns is None:
+            query_start_ns = ns  # Zero-length read in deterministic contract tests.
+        if type(query_start_ns) is not int or query_start_ns <= 0 or query_start_ns > ns:
+            raise ValueError('invalid query start/end monotonic interval')
         if not isinstance(text, str) or not re.fullmatch(r'[0-9]+\|[0-9]+\|[0-9]+', text.strip()):
             raise ValueError('malformed aggregate PostgreSQL counters')
         admitted, done, failed = map(int, text.strip().split('|'))
@@ -46,26 +50,42 @@ class CompletionTrace:
             raise ValueError('impossible admitted / terminal counters')
         if self.samples:
             prev = self.samples[-1]
-            if ns <= prev[0] or admitted < prev[1] or done < prev[2] or failed < prev[3]:
+            if ns <= prev[0] or query_start_ns < prev[0] or admitted < prev[1] or done < prev[2] or failed < prev[3]:
                 raise ValueError('clock regression or counter regression')
         if len(self.samples) >= self.max_samples:
             raise ValueError('terminal observer sample budget exceeded')
-        self.samples.append((ns, admitted, done, failed))
+        self.samples.append((ns, admitted, done, failed, query_start_ns))
 
     @property
     def complete(self):
         return bool(self.samples and self.samples[-1][2] == self.keys)
 
     def report(self):
-        if len(self.samples) < 2 or self.samples[0][1:] != (0, 0, 0):
+        if len(self.samples) < 2 or self.samples[0][1:4] != (0, 0, 0):
             raise ValueError('missing uncontaminated zero baseline')
-        if not self.complete or self.samples[-1][1:] != (self.keys, self.keys, 0):
+        if not self.complete or self.samples[-1][1:4] != (self.keys, self.keys, 0):
             raise ValueError('terminal completion not actually observed')
-        first = next((s for s in self.samples if s[1] > 0), None)
-        last = next(s for s in self.samples if s[2] == self.keys)
-        terminal_before = next((self.samples[i-1][0] for i, s in enumerate(self.samples)
-                                if s[2] == self.keys), None)
-        first_done = next((s for s in self.samples if s[2] > 0), None)
+        # First observed admission is an UPPER observation timestamp for the
+        # true first admission, while the previous zero reading is its LOWER
+        # bound. The terminal transition is bounded in exactly the same way.
+        # Reporting the difference of two UPPER timestamps alone is NOT a
+        # confidence bound on actual convergence latency.
+        first_index = next(i for i, s in enumerate(self.samples) if s[1] > 0)
+        terminal_index = next(i for i, s in enumerate(self.samples) if s[2] == self.keys)
+        first = self.samples[first_index]
+        last = self.samples[terminal_index]
+        # Query results represent a snapshot DURING the SQL round trip, not
+        # necessarily at the moment the response was consumed. Previous zero
+        # and incomplete snapshots therefore bound transitions using their
+        # query START time, not their query END time.
+        admission_before = self.samples[first_index - 1][4]
+        terminal_before = self.samples[terminal_index - 1][4]
+        first_done = next(s for s in self.samples if s[2] > 0)
+        lower_ns = max(0, terminal_before - first[0])
+        upper_ns = last[0] - admission_before
+        sample_gap_ns = max(self.samples[i][0] - self.samples[i-1][4]
+                            for i in range(1, len(self.samples)))
+        query_duration_ns = max(s[0]-s[4] for s in self.samples)
         return {'schema_version': 1, 'scope': 'one_observer_postgresql_terminal_visibility',
                 'expected_keys': self.keys, 'observed_admitted': last[1],
                 'observed_done': last[2], 'observed_failed': last[3],
@@ -76,10 +96,19 @@ class CompletionTrace:
                 'last_incomplete_sample_ms': round((terminal_before-self.samples[0][0])/1e6,3),
                 'observed_convergence_ms': round((last[0]-first[0])/1e6,3),
                 'sampling_uncertainty_ms': round((last[0]-terminal_before)/1e6,3),
-                'measurement_note': ('Samples from one observer monotonic clock, relative to first baseline sample. '
-                     'The all-DONE time is observed AFTER the true database transition; the previous '
-                     'incomplete sample bounds its visibility interval. This is not per-key/provider-effect '
-                     'latency or production capacity; psql polling adds measurement overhead.')}
+                'first_admission_previous_zero_ms': round((admission_before-self.samples[0][0])/1e6,3),
+                'convergence_lower_bound_ms': round(lower_ns/1e6,3),
+                'convergence_upper_bound_ms': round(upper_ns/1e6,3),
+                'convergence_bound_width_ms': round((upper_ns-lower_ns)/1e6,3),
+                'max_observed_sampling_gap_ms': round(sample_gap_ns/1e6,3),
+                'max_sql_round_trip_ms': round(query_duration_ns/1e6,3),
+                'measurement_note': ('One monotonic clock and bounded SQL read intervals; the real '
+                     'first admission occurred after the previous zero SQL snapshot and by the first positive '
+                     'SQL snapshot, each of which may occur anywhere during its query round trip. The '
+                     'DONE transition is similarly bracketed using query-start lower and query-end upper '
+                     'timestamps. Bounds apply to PostgreSQL visibility, '
+                     'not exact provider-effect time, per-key latency, or production capacity. '
+                     'Polling adds overhead. The single observed-point difference is descriptive only.')}
 
 
 class CompletionSampler:
@@ -100,7 +129,9 @@ class CompletionSampler:
             if self.error:
                 raise self.error
             # Timestamp after read: never assign the time before a blocking DB call.
-            self.trace.observe(self.query(), time.monotonic_ns())
+            query_start = time.monotonic_ns()
+            result = self.query()
+            self.trace.observe(result, time.monotonic_ns(), query_start_ns=query_start)
 
     def _work(self):
         try:
@@ -114,7 +145,7 @@ class CompletionSampler:
         if self.thread is not None:
             raise ValueError('observer already started')
         self._once()  # A verified clean baseline is mandatory.
-        if self.trace.samples[0][1:] != (0,0,0):
+        if self.trace.samples[0][1:4] != (0,0,0):
             raise ValueError('observation began after admissions')
         self.thread = threading.Thread(target=self._work, daemon=True, name='terminal-progress')
         self.thread.start()

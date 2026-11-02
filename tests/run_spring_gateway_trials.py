@@ -30,7 +30,7 @@ def check(ok,name):
 def run():
     check(ARGS.boot_jar.is_file(),'real Spring executable JAR available')
     with tempfile.TemporaryDirectory(prefix='deroyque-real-trials-') as temp:
-        base=Path(temp);samples=[];identities=[];convergence=[]
+        base=Path(temp);samples=[];identities=[];convergence=[];lower_bounds=[];upper_bounds=[]
         for index in range(3):
             summary=base/f'trial-{index}.json'
             merged=base/f'trial-{index}-merged.json'
@@ -57,6 +57,8 @@ def run():
             sample=json.loads(merged.read_text())
             samples.append(sample);identities.append(sample.get('run_id'))
             convergence.append(one['terminal_progress']['observed_convergence_ms'])
+            lower_bounds.append(one['terminal_progress']['convergence_lower_bound_ms'])
+            upper_bounds.append(one['terminal_progress']['convergence_upper_bound_ms'])
         check(len(set(identities))==3,'every experiment has an independent unique run ID')
         comparison=compare(samples)
         check(comparison['outcome']=='DESCRIPTIVE_ONLY','three complete trials accepted by strict comparator')
@@ -72,11 +74,19 @@ def run():
               'three unique trial identities remain in aggregate evidence')
         check(all(type(x) in (int,float) and x>=0 for x in convergence),
               'all three PostgreSQL terminal-convergence measurements are finite and nonnegative')
+        check(all(0<=lo<=value<=hi for lo,value,hi in zip(lower_bounds,convergence,upper_bounds)),
+              'each trial provides a valid interval-censored convergence result')
         convergence_median=statistics.median(convergence)
         convergence_mad=statistics.median(abs(x-convergence_median) for x in convergence)
+        lower_median=statistics.median(lower_bounds)
+        upper_median=statistics.median(upper_bounds)
+        check(lower_median<=convergence_median<=upper_median,
+              'median respects all three independent measurement intervals')
         RESULT['comparison']={
             'median_observed_convergence_ms':round(convergence_median,3),
             'convergence_mad_ms':round(convergence_mad,3),
+            'median_convergence_lower_bound_ms':round(lower_median,3),
+            'median_convergence_upper_bound_ms':round(upper_median,3),
             'trial_count':3,'median_gateway_post_qps':metric['median'],
             'median_absolute_deviation':metric['median_absolute_deviation'],
             'min_gateway_post_qps':metric['min'],'max_gateway_post_qps':metric['max'],

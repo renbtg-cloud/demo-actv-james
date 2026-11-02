@@ -5,6 +5,7 @@ A green process exit is not evidence that any intended assertions ran.
 This tool checks a scoped, sanitized result file and prints only counters.
 """
 import argparse
+import math
 import json
 from pathlib import Path
 import sys
@@ -32,6 +33,33 @@ def no_duplicate_json_pairs(items):
         if key in out:raise ValueError('duplicate JSON field in evidence')
         out[key]=value
     return out
+
+
+def _finite_nonnegative(value):
+    return type(value) in (int,float) and math.isfinite(value) and value >= 0
+
+
+def valid_convergence_bounds(t, max_gap_ms):
+    """Fail closed on missing, nonfinite, inverted or imprecise SQL polling intervals."""
+    keys=('observed_convergence_ms','convergence_lower_bound_ms',
+          'convergence_upper_bound_ms','convergence_bound_width_ms',
+          'max_observed_sampling_gap_ms','sampling_uncertainty_ms','max_sql_round_trip_ms')
+    if not all(_finite_nonnegative(t.get(k)) for k in keys):
+        return False
+    lower=t['convergence_lower_bound_ms'];point=t['observed_convergence_ms']
+    upper=t['convergence_upper_bound_ms'];width=t['convergence_bound_width_ms']
+    return (lower<=point<=upper and abs((upper-lower)-width)<=0.005 and
+            width<=max_gap_ms and t['max_observed_sampling_gap_ms']<=max_gap_ms and
+            t['sampling_uncertainty_ms']<=t['max_observed_sampling_gap_ms']+0.005 and
+            t['max_sql_round_trip_ms']<=max_gap_ms)
+
+
+def valid_trial_convergence_bounds(c):
+    lo=c.get('median_convergence_lower_bound_ms')
+    hi=c.get('median_convergence_upper_bound_ms')
+    observed=c.get('median_observed_convergence_ms')
+    return (_finite_nonnegative(lo) and _finite_nonnegative(hi) and
+            _finite_nonnegative(observed) and lo<=observed<=hi)
 
 
 def validate(scenario,result):
@@ -91,7 +119,9 @@ def validate(scenario,result):
                 result.get('terminal_progress_verified') is not True or
                 not isinstance(result.get('terminal_progress'),dict) or
                 result['terminal_progress'].get('observed_done')!=expected_effects or
-                result['terminal_progress'].get('observed_failed')!=0):
+                result['terminal_progress'].get('observed_failed')!=0 or
+                not valid_convergence_bounds(result['terminal_progress'],
+                         max_gap_ms=20_000 if soak else 12_000)):
             raise ValueError('real gateway/Spring/provider per-identity end-to-end proof absent')
     elif scenario=='gateway-trials':
         c=result.get('comparison')
@@ -106,6 +136,7 @@ def validate(scenario,result):
                 c['median_observed_convergence_ms']<0 or
                 type(c.get('convergence_mad_ms')) not in (int,float) or
                 c['convergence_mad_ms']<0 or
+                not valid_trial_convergence_bounds(c) or
                 not isinstance(c.get('workload_sha256'),str) or
                 len(c['workload_sha256'])!=64):
             raise ValueError('genuine repeated real Spring trials absent')
