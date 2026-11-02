@@ -18,6 +18,10 @@ This repository contains the **actual experimental source code**, not the older 
 - `tests/`: offline and real-infrastructure regression and acceptance tools.
 - `.github/workflows/spring-real-integration.yml`: builds and runs the actual Spring Boot integration test on a hosted runner with PostgreSQL and RabbitMQ services.
 
+## Keycloak identity-provider integration (Milestone 19)
+
+A separate GitHub Actions matrix job (`oidc-keycloak`) now tests the **real Spring OAuth2 Resource Server** against a disposable Keycloak authorization server. It obtains access tokens from the genuine `client_credentials` endpoint using per-run clients and realms, exercises issuer/audience/scope authorization, then verifies the durable activation through PostgreSQL, RabbitMQ and an independent SQLite provider. See `docs/MILESTONE-19.md`. This is a CI-only local HTTP development server; **it is not a production IdP deployment**.
+
 ## Build and test the real Spring Boot service
 
 Requirements: Java 21, Maven with dependency-repository access, Python 3.12+, `psql`, PostgreSQL 17, RabbitMQ 4.4, and the Python package `cryptography` for the independent test provider.

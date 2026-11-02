@@ -13,6 +13,7 @@ on:
       - 'tests/run_spring_chaos.py'
       - 'tests/run_spring_same_row_race.py'
       - 'tests/run_spring_jwt_security.py'
+      - 'tests/run_spring_keycloak_oidc.py'
       - 'simulator/**'
       - 'provider/**'
       - 'scripts/test-spring-real.sh'
@@ -29,6 +30,7 @@ on:
       - 'tests/run_spring_chaos.py'
       - 'tests/run_spring_same_row_race.py'
       - 'tests/run_spring_jwt_security.py'
+      - 'tests/run_spring_keycloak_oidc.py'
       - 'simulator/**'
       - 'provider/**'
       - 'scripts/test-spring-real.sh'
@@ -40,7 +42,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [staggered-crashes, exact-fault-windows, competing-windows, dependency-interruptions, late-and-contradiction, same-row-contention, jwt-security]
+        scenario: [staggered-crashes, exact-fault-windows, competing-windows, dependency-interruptions, late-and-contradiction, same-row-contention, jwt-security, oidc-keycloak]
     services:
       postgres:
         image: postgres:17
@@ -92,7 +94,11 @@ jobs:
           P13_RABBIT_USER: deroyque_ci
           P13_RABBIT_PASSWORD: lab-ci-only-rabbit-password
         run: |
-          if [[ "${{ matrix.scenario }}" == "jwt-security" ]]; then
+          if [[ "${{ matrix.scenario }}" == "oidc-keycloak" ]]; then
+            mvn -B -ntp -f adapter-springboot/pom.xml clean package
+            python3 -u tests/run_spring_keycloak_oidc.py --boot-jar adapter-springboot/target/deroyque-springboot-0.10.0-SNAPSHOT.jar --output "$RUNNER_TEMP/spring-keycloak-oidc.json"
+            cat "$RUNNER_TEMP/spring-keycloak-oidc.json"
+          elif [[ "${{ matrix.scenario }}" == "jwt-security" ]]; then
             mvn -B -ntp -f adapter-springboot/pom.xml clean package
             python3 -u tests/run_spring_jwt_security.py --boot-jar adapter-springboot/target/deroyque-springboot-0.10.0-SNAPSHOT.jar --output "$RUNNER_TEMP/spring-jwt-security.json"
             cat "$RUNNER_TEMP/spring-jwt-security.json"
