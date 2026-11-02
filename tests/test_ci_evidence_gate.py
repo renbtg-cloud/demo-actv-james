@@ -17,8 +17,8 @@ def report(scenario):
     elif scenario in ('oidc-keycloak','local-keycloak'):d.update(issuer_verified=True,signed_provider_effect_verified=True)
     elif scenario in ('gateway-witness','gateway-soak'):
         soak=scenario=='gateway-soak';n=240 if soak else 80;k=60 if soak else 20
-        d.update(completed=True,profile='soak' if soak else 'short',workload_duration_seconds=120 if soak else 0,business_effects=k,durable_requests=k,signed_attestations=k,identity_graph_verified=True,provider_per_key_verified=True,independent_ed25519_verified=True, terminal_signed_lineage_verified=True, uncontaminated_schema_verified=True, provider_index_and_time_verified=True,payload_contract_verified=True, measurement={'global_recorded_posts':n,'global_throughput_qps':50.0,'gateway_witness':{'total_http_responses':n,'backend_count':2},'verified_states':{'DONE':k}})
-    elif scenario=='gateway-trials':d.update(completed=True,comparison={'trial_count':3,'backend_count':2,'host_provenance_status':'SAME_KERNEL_OBSERVED','median_gateway_post_qps':30.0,'median_absolute_deviation':1.0,'workload_sha256':'a'*64})
+        d.update(completed=True,profile='soak' if soak else 'short',workload_duration_seconds=120 if soak else 0,business_effects=k,durable_requests=k,signed_attestations=k,identity_graph_verified=True,provider_per_key_verified=True,independent_ed25519_verified=True, terminal_signed_lineage_verified=True, uncontaminated_schema_verified=True, provider_index_and_time_verified=True,payload_contract_verified=True,terminal_progress_verified=True, terminal_progress={'observed_done':k,'observed_failed':0}, measurement={'global_recorded_posts':n,'global_throughput_qps':50.0,'gateway_witness':{'total_http_responses':n,'backend_count':2},'verified_states':{'DONE':k}})
+    elif scenario=='gateway-trials':d.update(completed=True,comparison={'trial_count':3,'backend_count':2,'host_provenance_status':'SAME_KERNEL_OBSERVED','median_gateway_post_qps':30.0,'median_absolute_deviation':1.0,'median_observed_convergence_ms':120.0,'convergence_mad_ms':10.0,'workload_sha256':'a'*64})
     elif scenario=='same-row-contention':d.update(completed=True,business_effects=1)
     else:d['cases']=[{'case':'real'}]
     return d
@@ -81,6 +81,17 @@ class EvidenceGateTest(unittest.TestCase):
                 with self.subTest(scenario=scenario,flag=flag):
                     data=report(scenario);data[flag]=False
                     with self.assertRaises(ValueError):validate(scenario,data)
+
+    def test_terminal_observer_cannot_be_omitted(self):
+        for scenario in ('gateway-witness','gateway-soak'):
+            data=report(scenario);data['terminal_progress_verified']=False
+            with self.assertRaises(ValueError):validate(scenario,data)
+            data=report(scenario);data['terminal_progress']['observed_done']-=1
+            with self.assertRaises(ValueError):validate(scenario,data)
+
+    def test_repeated_convergence_statistics_mandatory(self):
+        data=report('gateway-trials');data['comparison']['convergence_mad_ms']=None
+        with self.assertRaises(ValueError):validate('gateway-trials',data)
 
     def test_soak_proof_is_not_the_short_run(self):
         data=report('gateway-soak')

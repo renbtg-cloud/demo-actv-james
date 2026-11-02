@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'simulator'))
 from ingress_witness import WitnessServer, WitnessState
 from distributed_merge import merge
+from terminal_progress import CompletionSampler, count_query
 from server_metrics import fetch
 from gateway_identity_audit import postgres_identity_query, audit_postgres_rows, audit_sqlite_effects
 from gateway_signature_audit import signed_tokens_query, audit_signed_rows
@@ -54,6 +55,7 @@ RESULT = {'scenario': 'real-gateway-witness-'+A.profile, 'profile': A.profile,
           'workload_duration_seconds': W['duration'], 'checks': [], 'completed': False,
           'producer_shards': 2, 'producer_jvms': 4, 'spring_jvms': 2}
 CHILDREN = []
+PROGRESS = []
 
 
 def check(ok, description):
@@ -157,6 +159,12 @@ def execute(directory):
         simulator_jar = ROOT/'simulator/build/deroyque-input-simulator.jar'
         subprocess.run([str(ROOT/'simulator/build.sh')],check=True,capture_output=True,timeout=25)
         check(simulator_jar.is_file(),'standalone Java 21 input simulator built')
+        # Independent read-only PostgreSQL observer: one monotonic clock, bounded
+        # polling, and a verified zero baseline before any producers launch.
+        progress = CompletionSampler(W['keys'], lambda: sql(count_query(SCHEMA, RUN)),
+                                     interval_seconds=0.5 if A.profile=='short' else 1.0)
+        progress.start()
+        PROGRESS.append(progress)
         start = int(time.time()*1000)+14_000
         env={**os.environ,'DEROYQUE_SIM_WRITE_TOKEN':WRITE}
         shards=[]
@@ -238,6 +246,15 @@ def execute(directory):
         check(payload['durable_payload_fingerprints_verified']==W['keys'],
               'every accepted customer/product and its SHA-256 fingerprint match independent producer contract')
         RESULT['payload_contract_verified']=True
+        convergence = progress.finish()
+        check(convergence['observed_done']==W['keys'] and
+              convergence['observed_failed']==0 and
+              convergence['observed_admitted']==W['keys'] and
+              convergence['samples']>=2 and
+              convergence['sampling_uncertainty_ms']>=0,
+              'separate bounded monotonic PostgreSQL polling observed every key terminal')
+        RESULT['terminal_progress_verified']=True
+        RESULT['terminal_progress']=convergence
         RESULT['business_effects']=effects
         RESULT['durable_requests']=durable
         RESULT['signed_attestations']=signed
@@ -260,6 +277,8 @@ def main():
             RESULT['error_type']=type(exc).__name__
             print('GATEWAY_REAL_ERROR '+type(exc).__name__,flush=True)
         finally:
+            for progress in PROGRESS:
+                progress.close()
             for p,log in reversed(CHILDREN):
                 stop(p);log.close()
             failed=sum(not x['passed'] for x in RESULT['checks']);total=len(RESULT['checks'])

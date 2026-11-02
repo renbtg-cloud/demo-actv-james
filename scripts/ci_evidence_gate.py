@@ -87,7 +87,11 @@ def validate(scenario,result):
                 result.get('terminal_signed_lineage_verified') is not True or
                 result.get('uncontaminated_schema_verified') is not True or
                 result.get('provider_index_and_time_verified') is not True or
-                result.get('payload_contract_verified') is not True):
+                result.get('payload_contract_verified') is not True or
+                result.get('terminal_progress_verified') is not True or
+                not isinstance(result.get('terminal_progress'),dict) or
+                result['terminal_progress'].get('observed_done')!=expected_effects or
+                result['terminal_progress'].get('observed_failed')!=0):
             raise ValueError('real gateway/Spring/provider per-identity end-to-end proof absent')
     elif scenario=='gateway-trials':
         c=result.get('comparison')
@@ -98,6 +102,10 @@ def validate(scenario,result):
                 c['median_gateway_post_qps']<=0 or
                 type(c.get('median_absolute_deviation')) not in (int,float) or
                 c['median_absolute_deviation']<0 or
+                type(c.get('median_observed_convergence_ms')) not in (int,float) or
+                c['median_observed_convergence_ms']<0 or
+                type(c.get('convergence_mad_ms')) not in (int,float) or
+                c['convergence_mad_ms']<0 or
                 not isinstance(c.get('workload_sha256'),str) or
                 len(c['workload_sha256'])!=64):
             raise ValueError('genuine repeated real Spring trials absent')

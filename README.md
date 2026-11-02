@@ -102,6 +102,21 @@ payloads fail the new `payload_contract_verified` CI gate. See
 `docs/MILESTONE-61.md` through `docs/MILESTONE-63.md`. These are isolated
 laboratory checks, not universal production payload semantics.
 
+## Milestones 64–66 — Observed terminal convergence (not HTTP admission throughput)
+
+A separate **read-only PostgreSQL observer** samples admitted, DONE and FAILED
+request counts during the actual two-JVM Spring gateway load. It uses one
+monotonic clock, a bounded sampling budget, an independently checked zero
+baseline and fail-closed regression/contradiction checks. The published evidence
+includes the first and last observed transitions, a sampling-uncertainty window,
+and a separate descriptive median/MAD from three isolated trials. Real CI gates
+require the observation and refuse a fabricated completion claim.
+
+These measurements are of **PostgreSQL terminal-state visibility**, not the exact
+provider execution instant, individual request latencies, production capacity or
+physical host independence. Active polling changes system load. See
+`docs/MILESTONE-64.md` through `docs/MILESTONE-66.md`.
+
 ## Layout
 
 - `core/`: admission and evidence contracts, policy and safe parsing.

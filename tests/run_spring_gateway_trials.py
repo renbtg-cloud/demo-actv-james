@@ -7,6 +7,7 @@ repeatability evidence, not performance certification or physical host diversity
 """
 import argparse
 import json
+import statistics
 from pathlib import Path
 import subprocess
 import sys
@@ -29,7 +30,7 @@ def check(ok,name):
 def run():
     check(ARGS.boot_jar.is_file(),'real Spring executable JAR available')
     with tempfile.TemporaryDirectory(prefix='deroyque-real-trials-') as temp:
-        base=Path(temp);samples=[];identities=[]
+        base=Path(temp);samples=[];identities=[];convergence=[]
         for index in range(3):
             summary=base/f'trial-{index}.json'
             merged=base/f'trial-{index}-merged.json'
@@ -49,10 +50,13 @@ def run():
                   one.get('terminal_signed_lineage_verified') is True and
                   one.get('uncontaminated_schema_verified') is True and
                   one.get('provider_index_and_time_verified') is True and
-                  one.get('payload_contract_verified') is True,
+                  one.get('payload_contract_verified') is True and
+                  one.get('terminal_progress_verified') is True and
+                  one.get('terminal_progress',{}).get('observed_done')==20,
                   f'trial {index+1}/3 independently reconciled signed and remote effects')
             sample=json.loads(merged.read_text())
             samples.append(sample);identities.append(sample.get('run_id'))
+            convergence.append(one['terminal_progress']['observed_convergence_ms'])
         check(len(set(identities))==3,'every experiment has an independent unique run ID')
         comparison=compare(samples)
         check(comparison['outcome']=='DESCRIPTIVE_ONLY','three complete trials accepted by strict comparator')
@@ -66,7 +70,13 @@ def run():
         check(metric['median_absolute_deviation']>=0,'nonnegative dispersion represented explicitly')
         check(len({r['run_id'] for r in comparison['trials']})==3,
               'three unique trial identities remain in aggregate evidence')
+        check(all(type(x) in (int,float) and x>=0 for x in convergence),
+              'all three PostgreSQL terminal-convergence measurements are finite and nonnegative')
+        convergence_median=statistics.median(convergence)
+        convergence_mad=statistics.median(abs(x-convergence_median) for x in convergence)
         RESULT['comparison']={
+            'median_observed_convergence_ms':round(convergence_median,3),
+            'convergence_mad_ms':round(convergence_mad,3),
             'trial_count':3,'median_gateway_post_qps':metric['median'],
             'median_absolute_deviation':metric['median_absolute_deviation'],
             'min_gateway_post_qps':metric['min'],'max_gateway_post_qps':metric['max'],
