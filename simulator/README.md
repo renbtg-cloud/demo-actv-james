@@ -131,3 +131,14 @@ run3/merged.json --output benchmark-comparison.json`.
 The comparator demands identical workload SHA-256, terminal states and gateway
 evidence and produces descriptive median/MAD rather than an invented capacity
 limit. See the detailed methodological limits in `docs/MILESTONE-46.md`.
+
+## Milestones 49–50 — Genuine sustained and repeated real-Spring CI
+
+`gateway-soak` runs 240 POSTs over ~120 seconds with 60 unique idempotency
+keys through two Spring Boot processes, PostgreSQL, RabbitMQ, the independent
+SQLite provider and the one-clock gateway. `gateway-trials` repeats the whole
+freshly isolated Spring experiment three times, then strictly compares their
+reconciled witness reports and terminal state evidence. Both are distinct
+workflow jobs with dedicated fail-closed assertion gates. **Two minutes is not
+endurance certification**, and repetition on a single hosted CI runner does not
+establish physical independence or benchmark causality.

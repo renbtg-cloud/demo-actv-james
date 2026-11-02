@@ -45,6 +45,18 @@ and separately persisted provider effects. These are bounded scenario proofs,
 not universal exactly-once guarantees. See `docs/MILESTONE-47.md` and
 `docs/MILESTONE-48.md`.
 
+## Milestones 49–50 — Sustained real Spring traffic and repeated trials
+
+Two dedicated *real-infrastructure* CI scenarios expand the laboratory: 240
+POSTs over approximately two minutes across two Spring JVMs and the separately
+persisted provider, plus three independently initialized repeated experiments
+with descriptive median/MAD. Database dispatches, settlements, signed evidence
+and provider effects are explicitly reconciled per run. Neither the 120-second
+load nor three hosted CI repetitions is advertised as endurance certification,
+service-only saturation, independent hardware or causality proof. See
+`docs/MILESTONE-49.md` and `docs/MILESTONE-50.md` for the acceptance gates;
+**both remain pending until their specific new GitHub Actions jobs pass**.
+
 ## Layout
 
 - `core/`: admission and evidence contracts, policy and safe parsing.

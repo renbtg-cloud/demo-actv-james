@@ -31,6 +31,8 @@ from server_metrics import fetch
 P = argparse.ArgumentParser(description=__doc__)
 P.add_argument('--boot-jar', type=Path, required=True)
 P.add_argument('--output', type=Path, required=True)
+P.add_argument('--merged-output', type=Path, help='Write complete sanitized merged witness evidence for independent comparison')
+P.add_argument('--profile', choices=('short','soak'), default='short')
 A = P.parse_args()
 PG = {k: os.environ.get('DEROYQUE_PG_'+k.upper(),v) for k,v in {
     'host':'127.0.0.1','port':'5432','db':'deroyque_ci','user':'deroyque_ci','password':''}.items()}
@@ -39,7 +41,11 @@ SCHEMA = 'gw_' + SUFFIX
 QUEUE = 'gateway.' + SUFFIX
 RUN = 'gw-' + SUFFIX
 READ, WRITE = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
-RESULT = {'scenario': 'real-gateway-witness', 'checks': [], 'completed': False,
+WORKLOAD={'short': {'posts':80,'keys':20,'rate':50,'duration':0},
+          'soak': {'posts':240,'keys':60,'rate':2,'duration':120}}
+W=WORKLOAD[A.profile]
+RESULT = {'scenario': 'real-gateway-witness-'+A.profile, 'profile': A.profile,
+          'workload_duration_seconds': W['duration'], 'checks': [], 'completed': False,
           'producer_shards': 2, 'producer_jvms': 4, 'spring_jvms': 2}
 CHILDREN = []
 
@@ -151,20 +157,21 @@ def execute(directory):
         for index in range(2):
             folder=directory/f'shard-{index}'
             cmd=[sys.executable,str(ROOT/'simulator/run.py'), '--url',f'http://127.0.0.1:{gateway.server_port}',
-                 '--jvms=2','--concurrency=6','--requests=80','--keys=20','--rate=50',
+                 '--jvms=2','--concurrency=6',f"--requests={W['posts']}",f"--keys={W['keys']}",f"--rate={W['rate']}",
                  '--conflict-percent=30','--shard-count=2',f'--shard-index={index}',
                  f'--start-at-ms={start}',f'--run-id={RUN}','--output-dir',str(folder)]
+            if A.profile == 'soak':cmd.extend(['--profile=soak',f"--duration-seconds={W['duration']}"] )
             shards.append((folder,subprocess.Popen(cmd,env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)))
         for folder,child in shards:
             try:
-                stdout,stderr=child.communicate(timeout=70)
+                stdout,stderr=child.communicate(timeout=W['duration']+80)
             except subprocess.TimeoutExpired:
                 child.kill();child.communicate();raise RuntimeError('Java producer coordinator exceeded deadline')
             check(child.returncode==0 and (folder/'summary.json').exists(),
                   'independent two-JVM coordinator completed its assigned shard')
         report=state.report()
-        check(report['finished']==80 and report['inflight']==0 and report['transport_errors']==0,
-              'witness measured all 80 finished HTTP admissions without transport errors')
+        check(report['finished']==W['posts'] and report['inflight']==0 and report['transport_errors']==0,
+              f"witness measured all {W['posts']} finished HTTP admissions without transport errors")
         check(all(x['finished']>=1 for x in report['backends']),
               'each independent Spring JVM handled real POST traffic')
         metrics=[fetch(f'http://127.0.0.1:{port}',RUN,READ) for port in spring_ports]
@@ -173,8 +180,8 @@ def execute(directory):
         result=merge([p for p,c in shards],server_metrics=metrics,gateway_witness=report,
                      verify_state=True,await_done_seconds=80,token=READ)
         check(result['outcome']=='PASS','global producer, witness, service counter and final DB state audits agree')
-        check(result['global_recorded_posts']==80 and result['total_producer_jvms']==4,
-              '80 real POSTs from four independent producer JVMs reconciled')
+        check(result['global_recorded_posts']==W['posts'] and result['total_producer_jvms']==4,
+              f"{W['posts']} real POSTs from four independent producer JVMs reconciled")
         check(result['gateway_witness']['backend_count']==2 and result['server_side']['instance_count']==2,
               'one-clock gateway throughput across two distinct Spring JVMs without summing JVM clocks')
         check(result['server_side']['server_post_qps'] is None and result['global_throughput_qps']>0,
@@ -183,22 +190,26 @@ def execute(directory):
               'same-host experiment honestly reports same kernel, not multi-host proof')
         with sqlite3.connect(directory/'provider.sqlite3', timeout=6) as db:
             effects=db.execute('SELECT COUNT(*) FROM effect').fetchone()[0]
-        check(effects==20 and result['verified_states'].get('DONE')==20,
-              'exactly 20 independently stored provider effects and 20 terminal states')
+        check(effects==W['keys'] and result['verified_states'].get('DONE')==W['keys'],
+              f"exactly {W['keys']} independent provider effects and terminal states")
         rids=f"SELECT rid FROM {SCHEMA}.p9_requests WHERE idem_key LIKE '{RUN}-%'"
         durable=int(sql(f"SELECT count(*) FROM {SCHEMA}.p9_requests WHERE idem_key LIKE '{RUN}-%'"))
         dispatches=int(sql(f'SELECT count(*) FROM {SCHEMA}.p9_dispatch WHERE rid IN ({rids})'))
         settlements=int(sql(f'SELECT count(*) FROM {SCHEMA}.p9_settlement WHERE rid IN ({rids})'))
         signed=int(sql(f'SELECT count(*) FROM {SCHEMA}.p20_signed_attestation '
                        f'WHERE did IN (SELECT did FROM {SCHEMA}.p9_dispatch WHERE rid IN ({rids}))'))
-        check(durable==20 and dispatches==20 and settlements==20 and signed==20,
-              '20 durable requests, external dispatches, settlements and signed attestations corroborate provider effects')
+        check(durable==W['keys'] and dispatches==W['keys'] and settlements==W['keys'] and signed==W['keys'],
+              f"{W['keys']} requests, dispatches, settlements and signed attestations corroborate provider effects")
         RESULT['business_effects']=effects
         RESULT['durable_requests']=durable
         RESULT['signed_attestations']=signed
         RESULT['measurement']={k:result[k] for k in ('global_throughput_qps','gateway_witness',
                                       'host_evidence','global_recorded_posts','verified_states')}
         RESULT['completed']=True
+        if A.merged_output:
+            A.merged_output.parent.mkdir(parents=True,exist_ok=True)
+            with A.merged_output.open('x',encoding='utf-8') as f:
+                f.write(json.dumps(result,indent=2,sort_keys=True)+'\n')
         gateway.shutdown();witness_thread.join(timeout=3)
 
 

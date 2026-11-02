@@ -18,6 +18,8 @@ SCENARIOS={
     'late-and-contradiction':('spring-chaos-result.json',16),
     'same-row-contention':('spring-same-row-race.json',22),
     'gateway-witness':('spring-gateway-witness.json',20),
+    'gateway-soak':('spring-gateway-soak.json',20),
+    'gateway-trials':('spring-gateway-trials.json',15),
     'jwt-security':('spring-jwt-security.json',69),
     'oidc-keycloak':('spring-keycloak-oidc.json',26),
     'local-keycloak':('spring-local-keycloak.json',26),
@@ -61,19 +63,37 @@ def validate(scenario,result):
     elif scenario in ('oidc-keycloak','local-keycloak'):
         if (result.get('issuer_verified') is not True or result.get('signed_provider_effect_verified') is not True):
             raise ValueError('genuine issuer or signed independent effect not verified')
-    elif scenario=='gateway-witness':
+    elif scenario in ('gateway-witness','gateway-soak'):
         m=result.get('measurement')
-        if (result.get('completed') is not True or not isinstance(m,dict) or
-                m.get('global_recorded_posts')!=80 or
-                not isinstance(m.get('global_throughput_qps'),(int,float)) or
+        soak=scenario=='gateway-soak'
+        expected_posts=240 if soak else 80
+        expected_effects=60 if soak else 20
+        if (result.get('completed') is not True or
+                result.get('profile')!=('soak' if soak else 'short') or
+                result.get('workload_duration_seconds')!=(120 if soak else 0) or
+                not isinstance(m,dict) or m.get('global_recorded_posts')!=expected_posts or
+                type(m.get('global_throughput_qps')) not in (int,float) or
                 m['global_throughput_qps']<=0 or
                 not isinstance(m.get('gateway_witness'),dict) or
-                m['gateway_witness'].get('total_http_responses')!=80 or
+                m['gateway_witness'].get('total_http_responses')!=expected_posts or
                 m['gateway_witness'].get('backend_count')!=2 or
-                m.get('verified_states',{}).get('DONE')!=20 or
-                result.get('business_effects')!=20 or result.get('durable_requests')!=20 or
-                result.get('signed_attestations')!=20):
+                m.get('verified_states',{}).get('DONE')!=expected_effects or
+                result.get('business_effects')!=expected_effects or
+                result.get('durable_requests')!=expected_effects or
+                result.get('signed_attestations')!=expected_effects):
             raise ValueError('real gateway/Spring/provider end-to-end proof absent')
+    elif scenario=='gateway-trials':
+        c=result.get('comparison')
+        if (result.get('completed') is not True or not isinstance(c,dict) or
+                c.get('trial_count')!=3 or c.get('backend_count')!=2 or
+                c.get('host_provenance_status')!='SAME_KERNEL_OBSERVED' or
+                type(c.get('median_gateway_post_qps')) not in (int,float) or
+                c['median_gateway_post_qps']<=0 or
+                type(c.get('median_absolute_deviation')) not in (int,float) or
+                c['median_absolute_deviation']<0 or
+                not isinstance(c.get('workload_sha256'),str) or
+                len(c['workload_sha256'])!=64):
+            raise ValueError('genuine repeated real Spring trials absent')
     elif scenario=='same-row-contention':
         if result.get('completed') is not True or result.get('business_effects')!=1:
             raise ValueError('same-row concurrent work was not proven settled once')

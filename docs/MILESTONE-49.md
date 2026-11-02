@@ -1,0 +1,7 @@
+# Milestone 49 — Sustained real Spring gateway workload (120 seconds)
+
+A second genuine Spring integration CI matrix case, `gateway-soak`, exercises **240 timed HTTP admissions spanning approximately 120 seconds** across **two real Spring Boot JVMs**, a shared PostgreSQL schema, RabbitMQ, one independently persisted SQLite provider and four independent Java producer JVMs under two Python coordinators. The witness captures the upstream HTTP response window in one clock; the auditor reconciles 240 distinct attempts and 60 idempotency identities. After the workload, the test checks 60 terminal public statuses, 60 SQLite provider effects, 60 durable PostgreSQL request rows, 60 dispatches, 60 settlements and 60 signed attestations.
+
+The benchmark applies the **existing deterministic soak profile** and explicitly refuses missing/contradictory evidence. The GitHub workflow uses an independent CI case and fail-closed acceptance gate. Run it on authorized, isolated infrastructure; client socket permissions and provider key retention remain laboratory fixtures.
+
+**Limits:** 120 seconds is a short sustained-load acceptance test, **NOT** an endurance certificate or multi-hour soak. The gateway itself adds latency and possible bottleneck. The test shares one hosted Linux kernel and external Docker services, and it is not a physically distributed benchmark. Throughput is measured at the witness HTTP response boundary, not completed provider effects per second. The latest workflow's actual outcome must be inspected before claiming this milestone has passed.

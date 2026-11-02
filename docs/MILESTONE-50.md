@@ -1,0 +1,7 @@
+# Milestone 50 — Three independent real Spring repeats and descriptive dispersion
+
+The `gateway-trials` CI job runs the **actual Spring/PostgreSQL/RabbitMQ/SQLite** gateway experiment three times sequentially, with an isolated freshly created schema, queue, provider database, independent two-Spring-JVM processes, two coordinators and four Java load generators on *each* repetition. Each trial's complete global merged report is separately validated. `simulator/trial_compare.py` refuses repeated run identities, changed workload parameters, missing terminal states, mismatched backend count, bogus or absent gateway evidence, or changed host-provenance classification.
+
+Only after all three experiments pass does the job compute descriptive minimum, median, maximum and median absolute deviation of gateway HTTP response QPS. The CI evidence gate requires proof that all three trials ran and that the descriptive statistics exist. The comparison deliberately reports `DESCRIPTIVE_ONLY`: three same-host trials cannot establish production capacity, confidence intervals, causal latency overhead or independent physical failure domains.
+
+This test also does **not** upload raw application logs, credentials, private signing keys or provider database dumps to GitHub Actions artifacts. Full raw experiment evidence remains temporary on the CI runner; the summary reports sanitized counts and comparability. The full reproducible source ZIP and exact commit remain separately auditable.

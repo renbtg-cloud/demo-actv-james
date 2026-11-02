@@ -15,7 +15,10 @@ def report(scenario):
     if scenario=='staggered-crashes':d.update(mode='boot',flyway_runtime_verified=True,engine_completed=True,adversarial={'spring_service_jvms_started':4})
     elif scenario=='jwt-security':d['signed_effect_verified']=True
     elif scenario in ('oidc-keycloak','local-keycloak'):d.update(issuer_verified=True,signed_provider_effect_verified=True)
-    elif scenario=='gateway-witness':d.update(completed=True,business_effects=20,durable_requests=20,signed_attestations=20, measurement={'global_recorded_posts':80,'global_throughput_qps':50.0,'gateway_witness':{'total_http_responses':80,'backend_count':2},'verified_states':{'DONE':20}})
+    elif scenario in ('gateway-witness','gateway-soak'):
+        soak=scenario=='gateway-soak';n=240 if soak else 80;k=60 if soak else 20
+        d.update(completed=True,profile='soak' if soak else 'short',workload_duration_seconds=120 if soak else 0,business_effects=k,durable_requests=k,signed_attestations=k, measurement={'global_recorded_posts':n,'global_throughput_qps':50.0,'gateway_witness':{'total_http_responses':n,'backend_count':2},'verified_states':{'DONE':k}})
+    elif scenario=='gateway-trials':d.update(completed=True,comparison={'trial_count':3,'backend_count':2,'host_provenance_status':'SAME_KERNEL_OBSERVED','median_gateway_post_qps':30.0,'median_absolute_deviation':1.0,'workload_sha256':'a'*64})
     elif scenario=='same-row-contention':d.update(completed=True,business_effects=1)
     else:d['cases']=[{'case':'real'}]
     return d
@@ -70,6 +73,16 @@ class EvidenceGateTest(unittest.TestCase):
         data=report('gateway-witness')
         data['signed_attestations']=19
         with self.assertRaises(ValueError):validate('gateway-witness',data)
+
+    def test_soak_proof_is_not_the_short_run(self):
+        data=report('gateway-soak')
+        data['measurement']['global_recorded_posts']=80
+        with self.assertRaises(ValueError):validate('gateway-soak',data)
+
+    def test_three_trial_rate_cannot_be_fabricated(self):
+        data=report('gateway-trials')
+        data['comparison']['median_gateway_post_qps']=None
+        with self.assertRaises(ValueError):validate('gateway-trials',data)
 
     def test_boolean_not_integer(self):
         doc=report('jwt-security');doc['total']=True
