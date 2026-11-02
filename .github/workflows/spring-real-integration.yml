@@ -1,0 +1,81 @@
+name: Spring Boot real integration
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'adapter-springboot/**'
+      - 'core/**'
+      - 'store-postgres/**'
+      - 'adapter-httpjdk/**'
+      - 'runtime-rabbit/**'
+      - 'tests/run_spring_live_acceptance.py'
+      - 'scripts/test-spring-real.sh'
+      - '.github/workflows/spring-real-integration.yml'
+  pull_request:
+    paths:
+      - 'adapter-springboot/**'
+      - 'core/**'
+      - 'store-postgres/**'
+      - 'adapter-httpjdk/**'
+      - 'runtime-rabbit/**'
+      - 'tests/run_spring_live_acceptance.py'
+      - 'scripts/test-spring-real.sh'
+      - '.github/workflows/spring-real-integration.yml'
+jobs:
+  real-spring-boot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: deroyque_ci
+          POSTGRES_USER: deroyque_ci
+          POSTGRES_PASSWORD: lab-ci-only-unsafe-not-for-production
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U deroyque_ci -d deroyque_ci"
+          --health-interval 3s --health-timeout 5s --health-retries 30
+      rabbitmq:
+        image: rabbitmq:4.4.0-management
+        env:
+          RABBITMQ_DEFAULT_USER: deroyque_ci
+          RABBITMQ_DEFAULT_PASS: lab-ci-only-rabbit-password
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q check_running"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: adapter-springboot/pom.xml
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare PostgreSQL client and cryptographic provider
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+          python -m pip install 'cryptography>=42,<50'
+      - name: Build real Spring Boot and test automatic Flyway on fresh schema
+        env:
+          DEROYQUE_PSQL: psql
+          DEROYQUE_PG_HOST: 127.0.0.1
+          DEROYQUE_PG_PORT: '5432'
+          DEROYQUE_PG_DB: deroyque_ci
+          DEROYQUE_PG_USER: deroyque_ci
+          DEROYQUE_PG_PASSWORD: lab-ci-only-unsafe-not-for-production
+          P13_RABBIT_HOST: 127.0.0.1
+          P13_RABBIT_PORT: '5672'
+          P13_RABBIT_USER: deroyque_ci
+          P13_RABBIT_PASSWORD: lab-ci-only-rabbit-password
+        run: |
+          ./scripts/test-spring-real.sh --output "$RUNNER_TEMP/spring-real-result.json"
+          cat "$RUNNER_TEMP/spring-real-result.json"
+      # No raw JVM/provider logs, database dumps, keys, or credentials are uploaded.

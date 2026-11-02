@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: deroyque-experimental
+  datasource:
+    url: ${P13_JDBC:jdbc:postgresql://127.0.0.1:55432/postgres?currentSchema=deroyque_p13}
+    username: ${P13_DB_USER:nobody}
+    password: ${P13_DB_PASSWORD:}
+  flyway:
+    enabled: true
+    baseline-on-migrate: false
+    locations: classpath:db/migration
+  lifecycle:
+    timeout-per-shutdown-phase: 15s
+server:
+  address: ${SERVER_ADDRESS:127.0.0.1}
+  port: ${SERVER_PORT:18081}
+  shutdown: graceful
+  tomcat:
+    threads:
+      max: 100
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

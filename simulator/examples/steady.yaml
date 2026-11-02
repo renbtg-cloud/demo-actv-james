@@ -1,0 +1,14 @@
+# All workload plans must target a service you are authorized to stress.
+url: http://127.0.0.1:18081
+profile: steady
+jvms: 8
+concurrency: 8
+requests: 320
+keys: 80
+rate: 160
+conflict_percent: 30
+distribution: sequential
+start_delay_ms: 3500
+verify_state: true
+heap_max_mb: 64
+active_processors: 2

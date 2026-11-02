@@ -1,0 +1,14 @@
+profile: burst
+jvms: 12
+concurrency: 10
+requests: 360
+keys: 90
+rate: 25
+burst_rate: 300
+burst_width_seconds: 0.5
+burst_period_seconds: 2
+conflict_percent: 40
+distribution: skewed
+skew_power: 2
+start_delay_ms: 3500
+heap_max_mb: 48

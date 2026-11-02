@@ -1,0 +1,13 @@
+profile: soak
+jvms: 8
+concurrency: 6
+requests: 320
+keys: 80
+duration_seconds: 8
+rate: 40
+conflict_percent: 25
+distribution: hotspot
+hotspot_percent: 70
+hotspot_keys_percent: 10
+start_delay_ms: 3500
+heap_max_mb: 64

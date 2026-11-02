@@ -1,0 +1,14 @@
+profile: ramp-up
+jvms: 12
+concurrency: 8
+requests: 360
+keys: 90
+rate: 150
+ramp_start_rate: 15
+duration_seconds: 4
+conflict_percent: 40
+distribution: hotspot
+hotspot_percent: 80
+hotspot_keys_percent: 10
+start_delay_ms: 3500
+heap_max_mb: 48

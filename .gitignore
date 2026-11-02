@@ -1,0 +1,9 @@
+/build/
+/.local/
+/logs/*.log
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.class
+*.pyc
+__pycache__/
