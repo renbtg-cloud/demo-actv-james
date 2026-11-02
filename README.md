@@ -8,7 +8,7 @@ This repository contains the **actual experimental source code**, not the older 
 integration jobs succeeded; the JWT security job reported **0/44 failed,
 44/44 passed**, including RSA rotation, outage and JOSE attack probes. See
 [GitHub Actions run 41493502623](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41493502623).
-Milestones 23–25 below introduce additional contracts and acceptance tests;
+Milestones 23–26 below introduce additional contracts and acceptance tests;
 these **must not be claimed as CI-passing until their own run completes**.
 
 ## Layout
@@ -39,6 +39,13 @@ surrogate pairs remain valid JSON strings. See [Milestone 23](docs/MILESTONE-23.
 Only UTF-8 JSON is supported; contradictory/malformed charset parameters and
 non-UTF-8 declarations return 415 before any database writes. See
 [Milestone 24](docs/MILESTONE-24.md).
+
+## Milestone 26 — Cross-encoding Unicode idempotency
+
+A real Spring/SQLite-provider test proves an escaped surrogate pair and an
+identical literal UTF-8 scalar converge to the same durable external ID, UUID
+and single external effect; escaped duplicate object keys are rejected.
+See [Milestone 26](docs/MILESTONE-26.md).
 
 ## Milestone 25 — Reject-before-side-effect HTTP regression
 

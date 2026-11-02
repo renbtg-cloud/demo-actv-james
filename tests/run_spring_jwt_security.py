@@ -257,6 +257,41 @@ def run():
     check(provider_effects()==1,'independent SQLite provider recorded exactly one external effect')
     check(sql('SELECT count(*) FROM '+schema+'.p20_signed_attestation')=='1',
           'signed evidence persisted in PostgreSQL')
+
+    # Milestone 26: equivalent JSON encodings converge on one durable identity,
+    # through real Spring -> PostgreSQL -> RabbitMQ -> independently persisted
+    # signed provider. Contrasting normalizations (NFC/NFD) are NOT conflated.
+    rocket_id='jwt-'+tag+'-rocket-🚀'
+    rocket_payload={'externalId':rocket_id,'customerId':'unicode-ci','productCode':'basic'}
+    escaped_json=json.dumps(rocket_payload,ensure_ascii=True,separators=(',',':')).encode('ascii')
+    literal_json=json.dumps(rocket_payload,ensure_ascii=False,separators=(',',':')).encode('utf-8')
+    check(b'\\ud83d\\ude80' in escaped_json.lower() and b'\xf0\x9f\x9a\x80' in literal_json,
+          'Unicode test vectors independently encode escaped surrogate pair and literal UTF-8 scalar')
+    ustatus,ubody,_=raw_http('POST','/api/v1/requests',real_write,escaped_json)
+    uid=json.loads(ubody)['id'] if ustatus==202 else None
+    check(ustatus==202 and uid is not None,
+          'escaped JSON surrogate-pair identity admitted through real Spring HTTP')
+    rstatus,rbody,_=raw_http('POST','/api/v1/requests',real_write,literal_json,
+                              'application/json; charset="UTF-8"')
+    check(rstatus==200 and json.loads(rbody).get('id')==uid,
+          'literal UTF-8 identity is idempotent replay of escaped representation')
+    check(sql('SELECT count(*) FROM '+schema+'.p9_requests')=='2',
+          'two different identities total, not three, in PostgreSQL after Unicode replay')
+    check(bool(eventually(lambda: http('GET','/api/v1/requests/'+uid,auth=real_read)[0]==200 and
+                            json.loads(http('GET','/api/v1/requests/'+uid,auth=real_read)[1]).get('status')=='DONE',35)),
+          'Unicode activation completes through independently persisted provider')
+    with sqlite3.connect(directory/'provider.sqlite3',timeout=10) as c:
+        unicode_effects=c.execute('SELECT count(*) FROM effect WHERE key=?',(rocket_id,)).fetchone()[0]
+    check(unicode_effects==1,'independent provider records exactly one Unicode identity effect')
+    check(sql('SELECT count(*) FROM '+schema+'.p20_signed_attestation')=='2',
+          'both distinct completed activations have signed evidence in PostgreSQL')
+    duplicate_key=(b'{"externalId":"bad","exter\\u006ealId":"bad",'
+                   b'"customerId":"A","productCode":"B"}')
+    check(raw_http('POST','/api/v1/requests',real_write,duplicate_key)[0]==400,
+          'escaped JSON key alias cannot smuggle a duplicate identity field')
+    check(sql('SELECT count(*) FROM '+schema+'.p9_requests')=='2',
+          'escaped duplicate-key attempt makes no durable admission')
+
     # Adversarial issuer lifecycle: introducing a previously unknown signing key
     # must cause a real JWKS refresh, while a key unavailable during issuer outage
     # must not be authenticated. This is NOT an instant revocation guarantee:

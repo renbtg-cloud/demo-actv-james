@@ -73,6 +73,20 @@ public final class AdmissionHttpFacadeContract {
     check(replay.status()==200&&replay.json().contains("\"idempotentReplay\":true"),"replay response maps to 200");
     check(f.create("Bearer "+WRITE,"application/json",body("same-key","C","B"),null).status()==409,"conflict maps to 409");
     check(db.creates.get()==5,"conflict creates no new record");
+
+    // The same Unicode scalar expressed as JSON escapes or literal UTF-8
+    // must be the same durable idempotency identity, not two effects.
+    var escapedUnicode=body("rocket-\\uD83D\\uDE80","A","B");
+    var literalUnicode=body("rocket-🚀","A","B");
+    check(f.create("Bearer "+WRITE,"application/json",escapedUnicode,null).status()==202,
+          "escaped Unicode idempotency identity admitted");
+    check(f.create("Bearer "+WRITE,"application/json",literalUnicode,null).status()==200,
+          "equivalent literal UTF-8 Unicode identity replays instead of creating a new record");
+    check(db.creates.get()==6,"equivalent Unicode encodings create exactly one idempotency identity");
+    check(f.create("Bearer "+WRITE,"application/json",
+          "{\"externalId\":\"bad\",\"exter\\u006ealId\":\"bad\",\"customerId\":\"A\",\"productCode\":\"B\"}".getBytes(StandardCharsets.UTF_8),null).status()==400,
+          "duplicate JSON object key concealed by Unicode escape is rejected");
+
     String id=db.data.get("same-key").id();
     check(f.find("Bearer "+READ,id).status()==200,"read endpoint returns detail");
     check(f.find("Bearer "+READ,id).json().contains("\"status\":\"READY\""),"detail maps state");
@@ -106,7 +120,7 @@ public final class AdmissionHttpFacadeContract {
       check(created==1,"64 concurrent admissions have exactly one winner");
       check(replayed==63,"remaining 63 arrivals idempotently replay");
     }
-    check(db.creates.get()==7,"concurrent run added exactly one durable request after Unicode and media-type admissions");
+    check(db.creates.get()==8,"concurrent run adds one record after Unicode and media-type admissions");
     System.out.println("RESULT FAILURES "+failures+"/"+checks+" PASSED "+(checks-failures)+"/"+checks);
     if(failures!=0)System.exit(1);
   }
