@@ -40,6 +40,14 @@ Only UTF-8 JSON is supported; contradictory/malformed charset parameters and
 non-UTF-8 declarations return 415 before any database writes. See
 [Milestone 24](docs/MILESTONE-24.md).
 
+## Milestone 28 — Seeded Unicode parser property testing
+
+An independent deterministic Java contract runs **3,612 adversarial assertions**
+against raw/escaped Unicode equivalence, lone surrogates and escaped duplicate
+object keys. The `jwt-security` CI job now executes it before starting Spring.
+This strengthens evidence for the intentionally small JSON parser, not proof
+that all JSON syntax or encodings are supported. See [Milestone 28](docs/MILESTONE-28.md).
+
 ## Milestone 27 — Reliable CI bootstrap on ephemeral Ubuntu runners
 
 A failed Keycloak CI job on GitHub-hosted Ubuntu 26.04 traced to a **third-party

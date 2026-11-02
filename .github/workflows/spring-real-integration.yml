@@ -18,6 +18,7 @@ on:
       - 'tests/test_jwks_rotation_fixture.py'
       - 'tests/test_jwt_adversarial_vectors.py'
       - 'tests/java/demo/AdmissionHttpFacadeContract.java'
+      - 'tests/java/demo/StrictJsonUnicodePropertyTest.java'
       - 'tests/jwt_adversarial_vectors.py'
       - 'tests/jwks_rotation_fixture.py'
       - 'scripts/local_keycloak.py'
@@ -42,6 +43,7 @@ on:
       - 'tests/test_jwks_rotation_fixture.py'
       - 'tests/test_jwt_adversarial_vectors.py'
       - 'tests/java/demo/AdmissionHttpFacadeContract.java'
+      - 'tests/java/demo/StrictJsonUnicodePropertyTest.java'
       - 'tests/jwt_adversarial_vectors.py'
       - 'tests/jwks_rotation_fixture.py'
       - 'scripts/local_keycloak.py'
@@ -135,6 +137,9 @@ jobs:
               core/src/main/java/demo/{RequestOperations,IngressMeasurements,StrictJson,AdmissionHttpFacade}.java \
               tests/java/demo/AdmissionHttpFacadeContract.java
             java -cp "$RUNNER_TEMP/deroyque-core-contract" demo.AdmissionHttpFacadeContract
+            javac --release 21 -encoding UTF-8 -cp "$RUNNER_TEMP/deroyque-core-contract" \
+              -d "$RUNNER_TEMP/deroyque-core-contract" tests/java/demo/StrictJsonUnicodePropertyTest.java
+            java -cp "$RUNNER_TEMP/deroyque-core-contract" demo.StrictJsonUnicodePropertyTest
             mvn -B -ntp -f adapter-springboot/pom.xml clean package
             python3 -u tests/run_spring_jwt_security.py --boot-jar adapter-springboot/target/deroyque-springboot-0.10.0-SNAPSHOT.jar --output "$RUNNER_TEMP/spring-jwt-security.json"
             cat "$RUNNER_TEMP/spring-jwt-security.json"
