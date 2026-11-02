@@ -4,11 +4,13 @@
 
 This repository contains the **actual experimental source code**, not the older documentation-only preview. The three primary deliverables are the asynchronous activation service, an independent HTTP provider simulator, and a configurable multi-JVM incoming-transaction simulator. They are developed as one evolving system.
 
-**Verified baseline (2 November 2026, Milestone 43):** all 13 GitHub
-Actions jobs succeeded, including the two-Spring-JVM gateway witness with
-**0/19 failed, 19/19 passed**. See [GitHub Actions run 41511868650](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41511868650).
-Milestones 44–48 add additional tests and measurement evidence, whose real CI
-verdict must be checked independently against the new workflow run.
+**Verified baseline (2 November 2026, Milestone 50):** all 15 GitHub Actions
+jobs succeeded, including the 120-second two-Spring-JVM gateway load experiment
+(**0/20 failures; 20/20 checks passed**) and three genuinely isolated sequential
+real-Spring trials (**0/15 failures; 15/15 passed**). See
+[GitHub Actions run 41515165482](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41515165482).
+Milestones 51–53 below add stronger per-identity proofs and require fresh CI
+verification before being treated as accepted.
 
 ## Milestones 39–43 — One-clock ingress witness and real distributed-workload verification
 
@@ -55,7 +57,21 @@ and provider effects are explicitly reconciled per run. Neither the 120-second
 load nor three hosted CI repetitions is advertised as endurance certification,
 service-only saturation, independent hardware or causality proof. See
 `docs/MILESTONE-49.md` and `docs/MILESTONE-50.md` for the acceptance gates;
-**both remain pending until their specific new GitHub Actions jobs pass**.
+**Both passed in GitHub Actions run 41515165482 (15/15 jobs green).**
+
+## Milestones 51–53 — Exact per-identity cross-store graph and independently reverified signatures
+
+The clean real-Spring gateway workloads now require a **per-identity bijection**:
+each expected external ID must own exactly one durable request, dispatch,
+settlement, correctly attributed signed proof and SQLite effect. An independent
+Python cryptographic verifier then checks the stored Ed25519 token against the
+issuer's laboratory public key, expected key, nonce and signed metadata. Mutation
+tests reject offsetting incorrect keys and distorted graphs even when aggregate
+counts match. This is an experiment-specific normal-path assertion: retry-heavy
+failure scenarios can legitimately create multiple dispatches. Signed proofs
+establish authenticity, never truthfulness of a dishonest supplier.
+See `docs/MILESTONE-51.md` through `docs/MILESTONE-53.md`. Real CI acceptance is
+pending the new workflow run.
 
 ## Layout
 

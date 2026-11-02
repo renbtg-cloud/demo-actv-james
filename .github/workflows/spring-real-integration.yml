@@ -13,6 +13,10 @@ on:
       - 'tests/run_spring_chaos.py'
       - 'tests/run_spring_same_row_race.py'
       - 'tests/run_spring_gateway_witness.py'
+      - 'tests/gateway_identity_audit.py'
+      - 'tests/gateway_signature_audit.py'
+      - 'tests/test_gateway_identity_audit.py'
+      - 'tests/test_gateway_signature_audit.py'
       - 'tests/run_spring_gateway_trials.py'
       - 'tests/run_spring_jwt_security.py'
       - 'tests/run_spring_keycloak_oidc.py'
@@ -46,6 +50,10 @@ on:
       - 'tests/run_spring_chaos.py'
       - 'tests/run_spring_same_row_race.py'
       - 'tests/run_spring_gateway_witness.py'
+      - 'tests/gateway_identity_audit.py'
+      - 'tests/gateway_signature_audit.py'
+      - 'tests/test_gateway_identity_audit.py'
+      - 'tests/test_gateway_signature_audit.py'
       - 'tests/run_spring_gateway_trials.py'
       - 'tests/run_spring_jwt_security.py'
       - 'tests/run_spring_keycloak_oidc.py'
@@ -195,6 +203,7 @@ jobs:
       - name: Validate assertion evidence — ${{ matrix.scenario }}
         run: |
           python3 -m unittest discover -s tests -p test_ci_evidence_gate.py -v
+          python3 -m unittest discover -s tests -p 'test_gateway_*audit.py' -v
           python3 scripts/ci_evidence_gate.py \
             --scenario "${{ matrix.scenario }}" \
             --result-dir "$RUNNER_TEMP" \

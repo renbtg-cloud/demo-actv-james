@@ -80,8 +80,11 @@ def validate(scenario,result):
                 m.get('verified_states',{}).get('DONE')!=expected_effects or
                 result.get('business_effects')!=expected_effects or
                 result.get('durable_requests')!=expected_effects or
-                result.get('signed_attestations')!=expected_effects):
-            raise ValueError('real gateway/Spring/provider end-to-end proof absent')
+                result.get('signed_attestations')!=expected_effects or
+                result.get('identity_graph_verified') is not True or
+                result.get('provider_per_key_verified') is not True or
+                result.get('independent_ed25519_verified') is not True):
+            raise ValueError('real gateway/Spring/provider per-identity end-to-end proof absent')
     elif scenario=='gateway-trials':
         c=result.get('comparison')
         if (result.get('completed') is not True or not isinstance(c,dict) or

@@ -43,7 +43,9 @@ def run():
                   f'isolated real Spring trial {index+1}/3 executed successfully')
             one=json.loads(summary.read_text())
             check(one.get('completed') is True and one.get('business_effects')==20 and
-                  one.get('durable_requests')==20 and one.get('signed_attestations')==20,
+                  one.get('durable_requests')==20 and one.get('signed_attestations')==20 and
+                  one.get('identity_graph_verified') is True and one.get('provider_per_key_verified') is True and
+                  one.get('independent_ed25519_verified') is True,
                   f'trial {index+1}/3 independently reconciled signed and remote effects')
             sample=json.loads(merged.read_text())
             samples.append(sample);identities.append(sample.get('run_id'))

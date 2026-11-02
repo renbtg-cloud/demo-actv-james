@@ -17,7 +17,7 @@ def report(scenario):
     elif scenario in ('oidc-keycloak','local-keycloak'):d.update(issuer_verified=True,signed_provider_effect_verified=True)
     elif scenario in ('gateway-witness','gateway-soak'):
         soak=scenario=='gateway-soak';n=240 if soak else 80;k=60 if soak else 20
-        d.update(completed=True,profile='soak' if soak else 'short',workload_duration_seconds=120 if soak else 0,business_effects=k,durable_requests=k,signed_attestations=k, measurement={'global_recorded_posts':n,'global_throughput_qps':50.0,'gateway_witness':{'total_http_responses':n,'backend_count':2},'verified_states':{'DONE':k}})
+        d.update(completed=True,profile='soak' if soak else 'short',workload_duration_seconds=120 if soak else 0,business_effects=k,durable_requests=k,signed_attestations=k,identity_graph_verified=True,provider_per_key_verified=True,independent_ed25519_verified=True, measurement={'global_recorded_posts':n,'global_throughput_qps':50.0,'gateway_witness':{'total_http_responses':n,'backend_count':2},'verified_states':{'DONE':k}})
     elif scenario=='gateway-trials':d.update(completed=True,comparison={'trial_count':3,'backend_count':2,'host_provenance_status':'SAME_KERNEL_OBSERVED','median_gateway_post_qps':30.0,'median_absolute_deviation':1.0,'workload_sha256':'a'*64})
     elif scenario=='same-row-contention':d.update(completed=True,business_effects=1)
     else:d['cases']=[{'case':'real'}]
@@ -73,6 +73,13 @@ class EvidenceGateTest(unittest.TestCase):
         data=report('gateway-witness')
         data['signed_attestations']=19
         with self.assertRaises(ValueError):validate('gateway-witness',data)
+
+    def test_gateway_per_identity_proof_is_mandatory(self):
+        for scenario in ('gateway-witness','gateway-soak'):
+            for flag in ('identity_graph_verified','provider_per_key_verified','independent_ed25519_verified'):
+                with self.subTest(scenario=scenario,flag=flag):
+                    data=report(scenario);data[flag]=False
+                    with self.assertRaises(ValueError):validate(scenario,data)
 
     def test_soak_proof_is_not_the_short_run(self):
         data=report('gateway-soak')

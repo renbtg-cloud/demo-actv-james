@@ -27,6 +27,8 @@ sys.path.insert(0, str(ROOT/'simulator'))
 from ingress_witness import WitnessServer, WitnessState
 from distributed_merge import merge
 from server_metrics import fetch
+from gateway_identity_audit import postgres_identity_query, audit_postgres_rows, audit_sqlite_effects
+from gateway_signature_audit import signed_tokens_query, audit_signed_rows
 
 P = argparse.ArgumentParser(description=__doc__)
 P.add_argument('--boot-jar', type=Path, required=True)
@@ -200,6 +202,19 @@ def execute(directory):
                        f'WHERE did IN (SELECT did FROM {SCHEMA}.p9_dispatch WHERE rid IN ({rids}))'))
         check(durable==W['keys'] and dispatches==W['keys'] and settlements==W['keys'] and signed==W['keys'],
               f"{W['keys']} requests, dispatches, settlements and signed attestations corroborate provider effects")
+        graph = audit_postgres_rows(sql(postgres_identity_query(SCHEMA,RUN)),RUN,W['keys'])
+        check(graph['keys']==W['keys'],
+              f"each of {W['keys']} request identities has one dispatch, settlement and valid signed attestation")
+        provider_graph = audit_sqlite_effects(directory/'provider.sqlite3',RUN,W['keys'])
+        check(provider_graph['keys']==graph['keys'],
+              'each PostgreSQL identity has exactly one generation-one ACTIVATED provider effect')
+        RESULT['identity_graph_verified']=True
+        RESULT['provider_per_key_verified']=True
+        verified_tokens=audit_signed_rows(sql(signed_tokens_query(SCHEMA,RUN)),RUN,W['keys'],
+                                        ROOT/'fixtures/keys/provider-test-public.pem')
+        check(verified_tokens['independently_verified_ed25519']==W['keys'],
+              f"{W['keys']} stored provider signatures independently verified in Python by exact key")
+        RESULT['independent_ed25519_verified']=True
         RESULT['business_effects']=effects
         RESULT['durable_requests']=durable
         RESULT['signed_attestations']=signed
