@@ -4,13 +4,30 @@
 
 This repository contains the **actual experimental source code**, not the older documentation-only preview. The three primary deliverables are the asynchronous activation service, an independent HTTP provider simulator, and a configurable multi-JVM incoming-transaction simulator. They are developed as one evolving system.
 
-**Verified baseline (2 November 2026, Milestone 50):** all 15 GitHub Actions
-jobs succeeded, including the 120-second two-Spring-JVM gateway load experiment
-(**0/20 failures; 20/20 checks passed**) and three genuinely isolated sequential
-real-Spring trials (**0/15 failures; 15/15 passed**). See
-[GitHub Actions run 41515165482](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41515165482).
-Milestones 51–53 below add stronger per-identity proofs and require fresh CI
-verification before being treated as accepted.
+**Last independently verified remote baseline (2 November 2026, M80):**
+15/15 GitHub Actions jobs passed on commit `6aa9a2e`, including real Spring,
+PostgreSQL, RabbitMQ and SQLite integration. See [CI run 41537422940](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41537422940).
+The opt-in M81–M92 collector additions require their own new CI approval before
+being considered verified remotely.
+
+## Milestones 84–92 — Collector-challenged host proofs and signed verdict receipts
+
+The offline multi-host collector now supports an unpredictable **256-bit run
+challenge** pinned to the launch manifest, the operator-enrolled public keys
+and the exact per-shard host assignments. Ed25519 signed host evidence can bind
+individual clock samples; the merger compares signed samples with the clock
+aggregate and rejects substitution. An optional SQLite one-time acceptance
+journal blocks replay within one collector, including across competing Python
+processes. A separately signed Ed25519 final-result receipt permits offline
+verification of the **exact audited result bytes** by third parties holding a
+pre-enrolled collector public key.
+
+The new collector paths are opt-in, and legacy local experiments retain their
+compatibility. **Neither signature, clock probe, replay ledger nor signed
+receipt proves independent physical machines, trusted hardware or universal
+exactly-once effects**. These are preparatory security and audit controls; a
+real operator-provided multi-host campaign remains outstanding. See
+`docs/MILESTONE-84.md` through `docs/MILESTONE-92.md` and `simulator/README.md`.
 
 ## Milestone 71 — Confirmed client/gateway-accounting race regression
 
@@ -67,6 +84,20 @@ constructed UTC offset remains inside reported conservative bounds, while a
 contradictory offset hypothesis must be rejected. These are **local** transport
 and mathematical demonstrations, not an authenticated remote-host measurement.
 See `docs/MILESTONE-78.md` through `docs/MILESTONE-80.md`.
+
+## Milestones 81–83 — Pinned Ed25519 host evidence and authenticated collector inputs
+
+The collector can now require independent **Ed25519 signatures** over each
+shard's exact summary and Java-agent TSV bytes. Every claimed host must have a
+separately pinned public key, with no key reuse or missing shard signatures.
+The merger refuses tampering, replay across run IDs, swapped host keys and
+partially supplied proof material. The independent simulator CI job installs
+`cryptography` and tests both direct and integrated signature verification.
+
+**Key possession is not physical host attestation.** Keys must be enrolled and
+protected independently; an attacker with copied keys can impersonate a host.
+This does not authorize claims of cross-host benchmark performance or universal
+exactly-once effects. See `docs/MILESTONE-81.md` through `docs/MILESTONE-83.md`.
 
 ## Milestones 39–43 — One-clock ingress witness and real distributed-workload verification
 

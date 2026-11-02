@@ -102,7 +102,7 @@ def audit_service_snapshots(sources, run_id, records, statuses):
     return result, []
 
 
-def merge(folders,verify_state=False,await_done_seconds=0,timeout_ms=8000,token=None,server_metrics=None,require_distinct_kernels=False,gateway_witness=None,launch_manifest=None,evidence_index=None,clock_evidence=None,max_clock_width_ms=100):
+def merge(folders,verify_state=False,await_done_seconds=0,timeout_ms=8000,token=None,server_metrics=None,require_distinct_kernels=False,gateway_witness=None,launch_manifest=None,evidence_index=None,clock_evidence=None,max_clock_width_ms=100,host_pins=None,signed_host_reports=None,host_session=None,signed_clock_reports=None):
     if not folders:raise ValueError('Supply every shard output directory')
     # Input order is not a host identifier. Canonicalize before reading per-host
     # records, provenance or positional evidence digests.
@@ -201,12 +201,67 @@ def merge(folders,verify_state=False,await_done_seconds=0,timeout_ms=8000,token=
             errors.extend('clock evidence: '+err for err in clock_errors)
         except (ValueError,KeyError,TypeError,OSError,json.JSONDecodeError) as exc:
             errors.append('clock evidence: '+str(exc))
+    # A valid signature on individual clock reports is not enough if the
+    # subsequently aggregated clock evidence contains *different samples*.
+    # Tie the aggregate used for timing analysis to exactly those signed bytes.
+    if signed_clock_reports is not None:
+        if clock_evidence is None:
+            errors.append('signed clock reports require aggregate clock evidence')
+        else:
+            try:
+                from host_session import read_json
+                aggregate=read_json(clock_evidence,2*1024*1024)
+                entries=aggregate.get('shards')
+                if (not isinstance(entries,list) or len(entries)!=plan['shard_count'] or
+                    aggregate.get('run_id')!=run_id):
+                    raise ValueError('Incomplete signed clock aggregation')
+                by_shard={}
+                for clock_path in signed_clock_reports:
+                    source=read_json(clock_path,512*1024)
+                    shard=source.get('shard_index')
+                    if type(shard) is not int or shard in by_shard or not 0<=shard<plan['shard_count']:
+                        raise ValueError('Invalid/duplicate signed clock report shard')
+                    by_shard[shard]=source
+                if set(by_shard)!=set(range(plan['shard_count'])):
+                    raise ValueError('Missing signed clock report shard')
+                for i,entry in enumerate(entries):
+                    source=by_shard[i]
+                    if (not isinstance(entry,dict) or type(entry.get('shard_index')) is not int or
+                        entry['shard_index']!=i or entry.get('samples')!=source.get('samples') or
+                        source.get('reference_id')!=aggregate.get('reference_id') or
+                        source.get('run_id')!=run_id):
+                        raise ValueError('Clock aggregate contradicts signed shard report')
+            except (ValueError,TypeError,KeyError,OSError,json.JSONDecodeError) as exc:
+                errors.append('signed clock aggregation: '+str(exc))
+    signed_host_report = None
+    if host_session is not None and (launch_manifest is None or host_pins is None or signed_host_reports is None):
+        errors.append('Collector session requires launch manifest, host pins and signed reports')
+    if signed_clock_reports is not None and host_session is None:
+        errors.append('Signed clock evidence requires collector session')
+    if (host_pins is None) != (signed_host_reports is None):
+        errors.append('signed host evidence requires BOTH pinned public keys and all signed reports')
+    elif host_pins is not None:
+        try:
+            from host_signed_evidence import verify_envelopes
+            pins_path=pathlib.Path(host_pins)
+            if pins_path.is_symlink() or pins_path.stat().st_size > 128*1024:
+                raise ValueError('Unsafe or oversized pinned-key inventory')
+            pins=json.loads(pins_path.read_text(encoding='utf-8'))
+            from host_session import read_json
+            session=read_json(host_session) if host_session is not None else None
+            manifest=read_json(launch_manifest,2*1024*1024) if host_session is not None else None
+            signed_host_report, signature_errors=verify_envelopes(
+                pins,signed_host_reports,folders,run_id,session=session,manifest=manifest,
+                clock_reports=signed_clock_reports)
+            errors.extend('signed host evidence: '+err for err in signature_errors)
+        except (ValueError,TypeError,KeyError,OSError,json.JSONDecodeError) as exc:
+            errors.append('signed host evidence: '+str(exc))
     # Stable workload identity across repetitions (exclude absolute UTC launch barrier).
     # This does not by itself prove identical hardware or runtime configuration.
     workload_spec={k:plan.get(k) for k in PLAN_FIELDS if k!='start_at_ms'}
     signature=hashlib.sha256(json.dumps(workload_spec,sort_keys=True,separators=(',',':'),
                                        allow_nan=False).encode('utf-8')).hexdigest()
-    result={'run_id':run_id,'target':target,'shard_count':plan['shard_count'],
+    result={'session_sha256':(__import__('host_session').digest(__import__('host_session').read_json(host_session)) if host_session is not None and signed_host_report is not None else None), 'run_id':run_id,'target':target,'shard_count':plan['shard_count'],
         'workload_sha256':signature,
         'shards_received':len(seen_shards),'global_requested_posts':plan['global_attempted_posts'],
         'global_recorded_posts':len(all_records),'global_keys':plan['shared_keys'],
@@ -219,6 +274,7 @@ def merge(folders,verify_state=False,await_done_seconds=0,timeout_ms=8000,token=
         'global_invariant_violations':violations,'harness_errors':errors,
         'per_shard':sorted(chunks,key=lambda c:c['shard']),
         'host_evidence':host_evidence, 'clock_evidence':clock_report,
+        'signed_host_evidence':signed_host_report,
         'global_throughput_qps':(gateway_report['gateway_completed_post_qps'] if gateway_report else
                                 server_report['server_post_qps'] if server_report else None),
         'gateway_witness':gateway_report,
@@ -261,6 +317,12 @@ def main(argv=None):
     parser.add_argument('--evidence-index',type=pathlib.Path,help='Collector-retained SHA256 index, sealed before merge')
     parser.add_argument('--clock-evidence',type=pathlib.Path,help='Collector-retained four-timestamp UTC offset observations (not host proof)')
     parser.add_argument('--max-clock-width-ms',type=float,default=100.0)
+    parser.add_argument('--host-pins',type=pathlib.Path,help='Collector-pinned JSON host->Ed25519 public key inventory')
+    parser.add_argument('--signed-host-report',action='append',type=pathlib.Path,help='One signed report per positional shard directory')
+    parser.add_argument('--host-session',type=pathlib.Path,help='Collector-held, unpredictable run challenge that binds launch manifest, pinned keys and host assignments')
+    parser.add_argument('--signed-clock-report',action='append',type=pathlib.Path,help='Optional per-shard clock probe bound to Ed25519 report; requires host session')
+    parser.add_argument('--require-host-session',action='store_true',help='Refuse reports without collector session, launch manifest and pinned keys')
+    parser.add_argument('--require-host-signatures',action='store_true',help='Fail closed unless signed reports and a pinned public-key inventory were supplied')
     parser.add_argument('--strict-external-preflight',action='store_true',help='Require separate collector manifest, sealed shard index, bounded clock evidence and distinct reported kernels; NOT host authentication')
     p=parser.parse_args(argv)
     import os
@@ -270,7 +332,14 @@ def main(argv=None):
         if requirements:
             print('STRICT_EXTERNAL_PREFLIGHT_FAILED: '+'; '.join(requirements),file=sys.stderr)
             return 2
-    try:r=merge(p.folders,p.verify_state,p.await_done_seconds,token=os.environ.get('DEROYQUE_SIM_READ_TOKEN'),server_metrics=p.server_metrics,require_distinct_kernels=p.require_distinct_kernels,gateway_witness=p.gateway_witness,launch_manifest=p.launch_manifest,evidence_index=p.evidence_index,clock_evidence=p.clock_evidence,max_clock_width_ms=p.max_clock_width_ms)
+    if p.require_host_signatures and (p.host_pins is None or p.signed_host_report is None):
+        print('HOST_SIGNATURE_PREFLIGHT_FAILED: pinned inventory and signed reports required',file=sys.stderr)
+        return 2
+    if p.require_host_session and (p.host_session is None or p.launch_manifest is None or
+                                   p.host_pins is None or p.signed_host_report is None):
+        print('COLLECTOR_SESSION_PREFLIGHT_FAILED: session, manifest, pins and signed reports required',file=sys.stderr)
+        return 2
+    try:r=merge(p.folders,p.verify_state,p.await_done_seconds,token=os.environ.get('DEROYQUE_SIM_READ_TOKEN'),server_metrics=p.server_metrics,require_distinct_kernels=p.require_distinct_kernels,gateway_witness=p.gateway_witness,launch_manifest=p.launch_manifest,evidence_index=p.evidence_index,clock_evidence=p.clock_evidence,max_clock_width_ms=p.max_clock_width_ms,host_pins=p.host_pins,signed_host_reports=p.signed_host_report,host_session=p.host_session,signed_clock_reports=p.signed_clock_report)
     except (ValueError,KeyError,OSError,json.JSONDecodeError) as e:
         print(f'DISTRIBUTED_MERGE_FATAL: {e}',file=sys.stderr);return 2
     if p.output:

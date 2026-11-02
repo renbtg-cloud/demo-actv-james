@@ -7,3 +7,6 @@
 *.class
 *.pyc
 __pycache__/
+
+# Never commit simulator build products
+simulator/build/

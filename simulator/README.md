@@ -186,3 +186,110 @@ reconciled witness reports and terminal state evidence. Both are distinct
 workflow jobs with dedicated fail-closed assertion gates. **Two minutes is not
 endurance certification**, and repetition on a single hosted CI runner does not
 establish physical independence or benchmark causality.
+
+## Signed multi-host evidence (Milestones 81–83)
+
+Each producer host holds an **operator-managed Ed25519 private key** outside
+this repository. The collector must independently enroll the matching public
+key and host identity before the experiment; do not trust a key supplied in the
+same untrusted evidence bundle being verified.
+
+On a producer host, after `simulator/run.py` has finished and all `agent-*.tsv`
+files and `summary.json` are in place:
+
+```sh
+umask 077
+openssl genpkey -algorithm Ed25519 -out /private/host-signing-key.pem
+openssl pkey -in /private/host-signing-key.pem -pubout -out /private/host-public.pem
+python3 simulator/host_signed_evidence.py sign \
+  --folder simulator/results/RUN-host-000 --run-id RUN \
+  --host-id host-zero --shard 0 \
+  --private-key /private/host-signing-key.pem \
+  --output /private/RUN-host-000-signed.json
+```
+
+Use **distinct** private keys for every host and transfer public keys to the
+collector over a separately authenticated channel. Collect an offline JSON
+mapping of host IDs to PEM-encoded public-key strings (the actual PEM contents,
+with escaped newlines), never private keys. Keep this pin inventory outside
+untrusted result directories. The same key must not be enrolled twice.
+
+Then invoke `simulator/distributed_merge.py` with
+`--host-pins collector-pins.json`, one `--signed-host-report` per shard,
+and `--require-host-signatures`. Include `--strict-external-preflight`,
+`--require-distinct-kernels`, `--launch-manifest`, `--evidence-index`, and
+`--clock-evidence` for the stronger combined evidence gate. Report order may
+vary; each signed shard index determines its correct evidence directory.
+
+The signatures prove possession of keys pinned before collection; they do NOT
+prove that keys are on physically separate machines or that the operator's
+host inventory is authentic. Run the independent-host experiment only after
+the operator validates host ownership and network/security boundaries.
+
+
+## Collector-bound signing sessions, signed clock samples and verdict receipts (M84–M92)
+
+The collector should **retain independently** its launcher `manifest.json`,
+operator-approved `pins.json` (host ID to PEM public key), a `session.json`
+created by `host_session.py`, and the signing-key custody policy. Enrollment
+must not be based on keys received in the same untrusted result upload.
+
+After generating the launch manifest and enrolling one distinct host public key
+per shard, on the **collector** (no private key needed):
+
+```sh
+python3 simulator/host_session.py --manifest /trusted/manifest.json \
+  --pins /trusted/pins.json --hosts host-zero,host-one \
+  --output /trusted/session.json
+```
+
+Distribute the session, launcher, manifest and relevant pin inventory over an
+**authenticated transport** before running. Each host signs its own completed
+shard with an owner-only local private key; `--clock-report` is optional and
+requires the corresponding independently collected per-host clock report:
+
+```sh
+python3 simulator/host_signed_evidence.py sign \
+  --folder simulator/results/RUN-host-000 --run-id RUN \
+  --host-id host-zero --shard 0 --private-key /private/host-signing-key.pem \
+  --session /trusted/session.json --manifest /trusted/manifest.json \
+  --pins /trusted/pins.json --clock-report /private/host-clock.json \
+  --output /private/host-000-proof.json
+```
+
+On the collector run `distributed_merge.py` with all shard folders, the
+`--host-session`, `--host-pins`, `--launch-manifest`, and one
+`--signed-host-report` per shard, plus `--require-host-session`. If individual
+clock reports were signed, supply one `--signed-clock-report` per shard **and**
+the matching `--clock-evidence` aggregate. Missing or contradictory material
+causes FAIL, not a weaker implicit fallback. Store the final PASS JSON outside
+the untrusted shard directories.
+
+An optional **collector-local** one-time publication journal may then accept
+the same signed run only once:
+
+```sh
+python3 simulator/collector_ledger.py --ledger /trusted/accepted-runs.sqlite \
+  --session /trusted/session.json --verified-merge /trusted/final-pass.json
+```
+
+An authorized independent collector signing key can produce a detached result
+receipt, which an evaluator can verify using a separately enrolled collector
+public key:
+
+```sh
+python3 simulator/collector_receipt.py sign --result /trusted/final-pass.json \
+  --session /trusted/session.json --receipt /trusted/receipt.json \
+  --collector-key /private/collector-private.pem
+python3 simulator/collector_receipt.py verify --result /trusted/final-pass.json \
+  --session /trusted/session.json --receipt /trusted/receipt.json \
+  --collector-key /trusted/collector-public.pem
+```
+
+**Limits:** All files must be curated by the collector over authenticated
+channels. Challenge and signatures reject key/role/report substitution in this
+scope but cannot prevent a compromised key, a dishonest collector or two
+colluding actors from fabricating self-reported kernel identities. The ledger
+is local to one securely managed collector filesystem; the receipt authenticates
+its claim, not physical host provenance. Never bundle private signing keys or
+bearer tokens inside Git commits, source ZIPs or shared evidence packages.

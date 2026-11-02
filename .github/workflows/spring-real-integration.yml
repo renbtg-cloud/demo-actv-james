@@ -214,6 +214,24 @@ jobs:
             --summary-path "$GITHUB_STEP_SUMMARY"
       # No raw JVM/provider logs, database dumps, keys, or credentials are uploaded.
 
+  collector-signing-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install bounded Ed25519 test dependency
+        run: python3 -m pip install 'cryptography>=42,<50'
+      - name: Verify collector session, clock binding, replay and signed receipt
+        run: |
+          python3 -m unittest discover -s simulator/tests -p 'test_host_signed_evidence.py' -v
+          python3 -m unittest discover -s simulator/tests -p 'test_host_session*.py' -v
+          python3 -m unittest discover -s simulator/tests -p 'test_collector_*.py' -v
+
   source-archive:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -275,7 +293,7 @@ jobs:
           java-version: '21'
       - name: Verify independent simulator, multi-JVM and host evidence contracts
         run: |
-          python3 -m pip install 'PyYAML>=6.0,<7.0'
+          python3 -m pip install 'PyYAML>=6.0,<7.0' 'cryptography>=42,<50'
           python3 -m unittest discover -s simulator/tests -p 'test_distributed_*.py' -v
           python3 -m unittest discover -s simulator/tests -p 'test_clock_*.py' -v
           python3 -m unittest discover -s simulator/tests -v
