@@ -40,6 +40,13 @@ Only UTF-8 JSON is supported; contradictory/malformed charset parameters and
 non-UTF-8 declarations return 415 before any database writes. See
 [Milestone 24](docs/MILESTONE-24.md).
 
+## Milestone 29 — Cross-language differential JSON acceptance
+
+A separate Java process running the actual `StrictJson` parser is now checked
+against Python's independent `json` decoder with strict duplicate-key and
+Unicode-scalar policy. **1,500 synthetic cases** passed locally; the GitHub
+JWT integration job repeats the comparison. See [Milestone 29](docs/MILESTONE-29.md).
+
 ## Milestone 28 — Seeded Unicode parser property testing
 
 An independent deterministic Java contract runs **3,612 adversarial assertions**

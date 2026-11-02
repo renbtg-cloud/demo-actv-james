@@ -19,6 +19,8 @@ on:
       - 'tests/test_jwt_adversarial_vectors.py'
       - 'tests/java/demo/AdmissionHttpFacadeContract.java'
       - 'tests/java/demo/StrictJsonUnicodePropertyTest.java'
+      - 'tests/java/demo/StrictJsonOracle.java'
+      - 'tests/test_json_python_oracle.py'
       - 'tests/jwt_adversarial_vectors.py'
       - 'tests/jwks_rotation_fixture.py'
       - 'scripts/local_keycloak.py'
@@ -44,6 +46,8 @@ on:
       - 'tests/test_jwt_adversarial_vectors.py'
       - 'tests/java/demo/AdmissionHttpFacadeContract.java'
       - 'tests/java/demo/StrictJsonUnicodePropertyTest.java'
+      - 'tests/java/demo/StrictJsonOracle.java'
+      - 'tests/test_json_python_oracle.py'
       - 'tests/jwt_adversarial_vectors.py'
       - 'tests/jwks_rotation_fixture.py'
       - 'scripts/local_keycloak.py'
@@ -140,6 +144,9 @@ jobs:
             javac --release 21 -encoding UTF-8 -cp "$RUNNER_TEMP/deroyque-core-contract" \
               -d "$RUNNER_TEMP/deroyque-core-contract" tests/java/demo/StrictJsonUnicodePropertyTest.java
             java -cp "$RUNNER_TEMP/deroyque-core-contract" demo.StrictJsonUnicodePropertyTest
+            javac --release 21 -encoding UTF-8 -cp "$RUNNER_TEMP/deroyque-core-contract" \
+              -d "$RUNNER_TEMP/deroyque-core-contract" tests/java/demo/StrictJsonOracle.java
+            python3 tests/test_json_python_oracle.py --classes "$RUNNER_TEMP/deroyque-core-contract"
             mvn -B -ntp -f adapter-springboot/pom.xml clean package
             python3 -u tests/run_spring_jwt_security.py --boot-jar adapter-springboot/target/deroyque-springboot-0.10.0-SNAPSHOT.jar --output "$RUNNER_TEMP/spring-jwt-security.json"
             cat "$RUNNER_TEMP/spring-jwt-security.json"
