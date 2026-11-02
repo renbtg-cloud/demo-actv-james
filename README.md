@@ -43,3 +43,36 @@ The simulator supports CLI and YAML workload profiles, load generators in indepe
 ## Security, guarantees and limitations
 
 Do **not** deploy these test assets as a production service without further work. Laboratory bearer tokens, cryptographic fixtures and simulated provider receipts are for tests only. Exactly-once external side effects cannot be guaranteed against a provider that expires idempotency keys or lies about its effects. Consult `docs/STATUS-AND-GAPS.md` and the versioned milestone notes for demonstrated results, unresolved issues and the experimental history.
+
+
+## Spring Boot multi-process adversarial CI
+
+The GitHub Actions `Spring Boot real integration` workflow also runs an **opt-in**
+second phase after the ordinary acceptance test. It starts a second real Spring Boot
+JVM sharing the same PostgreSQL business state and RabbitMQ queue, starts a fresh
+160-key / 960-POST workload using a memory-bounded number (maximum 24) of
+**independent producer JVMs**, then kills the second Spring worker with `SIGKILL`
+while admission is in progress. The surviving Spring JVM must complete the work.
+The simulator audits HTTP outcomes, global idempotency, final states and producer
+JVM overlap; the acceptance harness separately audits the provider SQLite effects.
+
+The workload is **not** a performance benchmark of a production-sized instance.
+A runner with insufficient memory fails the resource preflight rather than
+silently reducing the test to two JVMs or disabling its memory safeguards.
+The primary acceptance test is still runnable without the adversarial phase:
+
+```bash
+./scripts/test-spring-real.sh --load-jvms 8 --output /tmp/acceptance.json
+```
+
+To enable stress locally against isolated lab infrastructure and a working Maven
+Central connection:
+
+```bash
+./scripts/test-spring-real.sh --adversarial-max-jvms 24 --output /tmp/adversarial.json
+```
+
+Crash injection does not prove the killed worker personally contacted the
+provider before it died; it tests recovery from abrupt peer loss during a
+concurrent workload. Idempotency guarantees still depend on the external
+provider contract.

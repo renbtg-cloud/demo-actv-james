@@ -15,6 +15,7 @@ PARSER.add_argument('--mode',choices=['boot','legacy'],default='boot')
 PARSER.add_argument('--boot-jar',default=str(ROOT/'adapter-springboot/target/deroyque-springboot-0.10.0-SNAPSHOT.jar'))
 PARSER.add_argument('--output',default=None,help='Write sanitized JSON results here')
 PARSER.add_argument('--load-jvms',type=int,default=8,help='Number of independent generator JVMs (0 disables additional load)')
+PARSER.add_argument('--adversarial-max-jvms',type=int,default=0,help='Run multi-Spring-JVM crash/load test, up to this many independent producer JVMs (0 disables)')
 ARGS=PARSER.parse_args()
 PG=os.environ.get('DEROYQUE_PSQL','psql')
 HOST=os.environ.get('DEROYQUE_PG_HOST','127.0.0.1')
@@ -84,6 +85,91 @@ def stage(rid):
 def provider_effects():
     with sqlite3.connect(TMPPATH/'provider.sqlite3') as c:
         return c.execute('select count(*) from effect').fetchone()[0]
+
+def adversarial_jvm_budget(max_jvms):
+    """Reserve RAM for two Spring JVMs and dependencies, then bound producer JVMs.
+
+    This is a preflight memory estimate, not proof that actual RSS will fit.
+    Never override the simulator's independent cgroup guard.
+    """
+    if not 8 <= max_jvms <= 256:
+        raise ValueError('adversarial maximum JVMs must be 8..256')
+    try:
+        cap=pathlib.Path('/sys/fs/cgroup/memory.max').read_text().strip()
+        used=int(pathlib.Path('/sys/fs/cgroup/memory.current').read_text().strip())
+        available=int(cap)-used if cap!='max' else None
+    except (ValueError,OSError):available=None
+    if available is None:
+        with open('/proc/meminfo') as f:
+            found=[int(line.split()[1])*1024 for line in f if line.startswith('MemAvailable:')]
+        available=found[0] if found else 0
+    reserved=1024*1024*1024
+    per_producer=(64+48)*1024*1024
+    budget=max(0,int((available-reserved)*0.65))//per_producer
+    count=min(max_jvms,budget)
+    if count<8:raise RuntimeError(f'Insufficient headroom for 8 adversarial JVMs; budget={count}, available_MiB={available//1048576}')
+    return count
+
+def wait_for_admission(prefix,minimum,seconds=30):
+    deadline=time.monotonic()+seconds
+    while time.monotonic()<deadline:
+        admitted=int(sql("SELECT count(*) FROM "+SCHEMA+".p9_requests WHERE idem_key LIKE '"+prefix+"-%'"))
+        if admitted>=minimum:return admitted
+        time.sleep(.3)
+    return 0
+
+def adversarial_spring_test(jar,base_env):
+    if ARGS.mode!='boot':raise RuntimeError('Multi-JVM Spring stress requires REAL Spring Boot')
+    jvms=adversarial_jvm_budget(ARGS.adversarial_max_jvms)
+    peer_port=freeport()
+    peer=start('spring-peer',['java','-Xmx384m','-jar',str(jar)],{
+        **base_env,'SERVER_PORT':str(peer_port),'P13_API_PORT':str(peer_port),
+        'APP_LAB_METRICS_ENABLED':'0'})
+    def peer_ready():
+        if peer.poll() is not None:raise RuntimeError('Independent Spring worker JVM exited during boot')
+        with urllib.request.urlopen(f'http://127.0.0.1:{peer_port}/api/v1/health/readiness',timeout=2) as r:
+            return r.status==200
+    must(bool(eventually(peer_ready,45)),'second independent Spring Boot JVM is ready against SAME PostgreSQL and RabbitMQ')
+    must(peer.pid!=CHILDREN[1][0].pid,'Spring peers have distinct process IDs')
+    run_id='adv-'+TAG
+    simdir=TMPPATH/'adversarial-load'
+    args=[sys.executable,'-u',str(ROOT/'simulator/run.py'),
+          '--url',f'http://127.0.0.1:{API}','--jvms',str(jvms),
+          '--concurrency','8','--requests','960','--keys','160',
+          '--conflict-percent','40','--rate','110','--start-delay-ms','6500',
+          '--timeout-ms','10000','--await-done-seconds','100',
+          '--heap-max-mb','64','--active-processors','1',
+          '--run-id',run_id,'--verify-state','--output-dir',str(simdir)]
+    sim=start('adversarial-generator',args,{
+        'DEROYQUE_SIM_WRITE_TOKEN':WRITE,'DEROYQUE_SIM_READ_TOKEN':READ})
+    admitted=wait_for_admission(run_id,12,45)
+    must(admitted>=12 and sim.poll() is None,'independent producers admitted work while both Spring JVMs were alive')
+    must(peer.poll() is None,'peer Spring JVM remained alive until deliberate crash injection')
+    os.killpg(peer.pid,signal.SIGKILL)
+    peer.wait(timeout=8)
+    must(peer.returncode==-signal.SIGKILL,'second Spring JVM was killed by SIGKILL, not graceful shutdown')
+    must(CHILDREN[1][0].poll() is None,'surviving Spring JVM remained alive after peer crash')
+    try:sim.wait(timeout=160)
+    except subprocess.TimeoutExpired:raise RuntimeError('adversarial load generator exceeded 160s')
+    must(sim.returncode==0,'multi-JVM simulator finished and validated every generated request')
+    report=json.loads((simdir/'summary.json').read_text()) if (simdir/'summary.json').exists() else {}
+    observed=report.get('observed',{})
+    peak=observed.get('peak_jvms_with_inflight_http',0)
+    must(observed.get('records')==960 and observed.get('admitted_keys_observed')==160,
+         '960 POSTs and 160 unique keys observed across independent producer JVMs')
+    must(peak>=8,'at least eight PRODUCER JVMs actually overlapped in flight (not merely launched)')
+    must(report.get('outcome')=='PASS' and not report.get('violations') and not report.get('state_verification_errors'),
+         'global idempotency and all final request states passed after worker crash')
+    with sqlite3.connect(TMPPATH/'provider.sqlite3') as c:
+        effects=c.execute('SELECT count(*) FROM effect WHERE key LIKE ?',(run_id+'-%',)).fetchone()[0]
+    must(effects==160,'provider SQLite recorded exactly 160 external effects for 160 keys (no duplicates)')
+    RESULT['adversarial']={'producer_jvms_configured':jvms,
+        'producer_jvms_with_overlapping_http':peak,
+        'requests':960,'keys':160,'effects':effects,'peer_killed_with_sigkill':True,
+        'producer_throughput_qps':observed.get('post_attempts_per_second'),
+        'outcome':report.get('outcome')}
+    print('ADVERSARIAL_OUTCOME PASS jvms='+str(jvms)+' overlap='+str(peak)+
+          ' HTTP=960 keys=160 effects='+str(effects),flush=True)
 
 def run():
     jar=pathlib.Path(ARGS.boot_jar).resolve()
@@ -181,6 +267,8 @@ def run():
         must(summary.get('outcome')=='PASS','simulator reports PASS including final states')
         RESULT['simulator']={'jvms_configured':ARGS.load_jvms,'requests':160,
                              'keys':40,'outcome':summary.get('outcome')}
+    if ARGS.adversarial_max_jvms:
+        adversarial_spring_test(jar,env)
     return 0
 
 def main():
