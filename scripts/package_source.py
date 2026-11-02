@@ -12,6 +12,7 @@ import re
 import shutil
 import stat
 import subprocess
+import tempfile
 import sys
 import zipfile
 
@@ -218,15 +219,32 @@ def verify_against_checkout(root, archive):
     return result
 
 
+def verify_reproducible(root, archive):
+    """Reject noncanonical ZIP metadata even if source bytes and modes match.
+
+    Requires matched Python/zlib ZIP encoding across producer and verifier;
+    CI explicitly pins Python 3.12 on both clean Ubuntu-hosted runners.
+    """
+    result = verify_against_checkout(root, archive)
+    with tempfile.TemporaryDirectory(prefix='deroyque-zip-rebuild-') as tmp:
+        expected = Path(tmp) / 'canonical.zip'
+        make_archive(Path(root), expected)
+        if sha256_file(expected) != sha256_file(Path(archive)):
+            raise ValueError('published ZIP bytes differ from canonical independent rebuild')
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--verify-only', action='store_true')
     parser.add_argument('--verify-checkout', action='store_true')
+    parser.add_argument('--verify-reproducible', action='store_true')
     args = parser.parse_args()
     try:
-        report = (verify_against_checkout(args.root, args.output) if args.verify_checkout else
+        report = (verify_reproducible(args.root, args.output) if args.verify_reproducible else
+                  verify_against_checkout(args.root, args.output) if args.verify_checkout else
                   verify_archive(args.output) if args.verify_only else make_archive(args.root, args.output))
         print('SOURCE_PACKAGE_RESULT FAILURES 0/' + str(report['files']) +
               ' PASSED ' + str(report['files']) + '/' + str(report['files']) +

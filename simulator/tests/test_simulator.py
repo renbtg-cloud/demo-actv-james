@@ -79,6 +79,8 @@ class Tests(unittest.TestCase):
             self.assertEqual(p.returncode,0,p.stdout[-3000:]+p.stderr)
             result=json.loads((pathlib.Path(temp)/'run'/'summary.json').read_text())
             self.assertEqual(result['observed']['records'],120)
+            self.assertEqual(result['host_environment']['schema_version'],1)
+            self.assertEqual(len(result['host_environment']['kernel_fingerprint']),64)
             self.assertEqual(result['observed']['admitted_keys_observed'],30)
             self.assertEqual(result['observed']['http_statuses']['202'],30)
             self.assertGreater(int(result['observed']['http_statuses'].get('409',0)),0)
@@ -110,6 +112,38 @@ class Tests(unittest.TestCase):
         rows=[{'sequence':0,'slot':0,'variant':0,'status':200,'id':'one','latency_ns':1}]
         violations,*_=simulator.audit(rows,1)
         self.assertTrue(any('replay without exactly one creation' in v for v in violations))
+    def test_08_two_coordinator_same_kernel_negative_control(self):
+        # Real Java producers and real HTTP, but NOT two physical Linux hosts.
+        import time
+        from distributed_merge import merge
+        with tempfile.TemporaryDirectory(prefix='deroyque-sim-two-hosts-') as temp:
+            start_ms=int(time.time()*1000)+14000
+            run_id='negctl-'+uuid.uuid4().hex[:12]
+            env={**os.environ,'DEROYQUE_SIM_WRITE_TOKEN':'demo-write-token'}
+            processes=[]
+            for shard in range(2):
+                folder=pathlib.Path(temp)/f'host-{shard}'
+                args=[sys.executable,str(ROOT/'run.py'),
+                      '--url',f'http://127.0.0.1:{self.service.server_port}',
+                      '--jvms=2','--concurrency=6','--requests=64','--keys=16',
+                      '--rate=70','--conflict-percent=40','--shard-count=2',
+                      f'--shard-index={shard}',f'--start-at-ms={start_ms}',
+                      f'--run-id={run_id}','--output-dir',str(folder)]
+                processes.append(subprocess.Popen(args,env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True))
+            for process in processes:
+                try:stdout,stderr=process.communicate(timeout=55)
+                except subprocess.TimeoutExpired:
+                    process.kill();process.communicate();self.fail('coordinator hung')
+                self.assertEqual(process.returncode,0,stdout[-1500:]+stderr[-1500:])
+            paths=[pathlib.Path(temp)/f'host-{shard}' for shard in range(2)]
+            report=merge(paths)
+            self.assertEqual(report['outcome'],'PASS',report)
+            self.assertEqual(report['global_recorded_posts'],64)
+            self.assertEqual(report['total_producer_jvms'],4)
+            self.assertEqual(report['host_evidence']['status'],'SAME_KERNEL_OBSERVED')
+            self.assertIsNone(report['global_throughput_qps'])
+            self.assertEqual(merge(paths,require_distinct_kernels=True)['outcome'],'FAIL')
+
     def test_07_verification_counts_each_key_once_after_polling(self):
         observations=[]
         def state_sequence(url,token,uid,timeout_ms):

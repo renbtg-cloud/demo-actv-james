@@ -4,7 +4,7 @@
 
 This repository contains the **actual experimental source code**, not the older documentation-only preview. The three primary deliverables are the asynchronous activation service, an independent HTTP provider simulator, and a configurable multi-JVM incoming-transaction simulator. They are developed as one evolving system.
 
-**Verified baseline (2 November 2026, Milestone 22):** all nine real Spring
+**Earlier verified baseline (2 November 2026, Milestone 22):** all nine real Spring
 integration jobs succeeded; the JWT security job reported **0/44 failed,
 44/44 passed**, including RSA rotation, outage and JOSE attack probes. See
 [GitHub Actions run 41493502623](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41493502623).
@@ -322,3 +322,20 @@ excessive advertised expansion, suspicious paths and malformed metadata.
 See [M33](docs/MILESTONE-33.md), [M34](docs/MILESTONE-34.md) and
 [M35](docs/MILESTONE-35.md). These changes require a new successful CI run;
 passing offline regression tests alone does not establish CI success.
+
+## Milestone 36 — Independent full-byte reproducibility
+
+A second CI runner now rebuilds the Git-tracked source ZIP itself and requires a
+**byte-identical** SHA-256 to the uploaded archive, in addition to the prior
+content, permission and resource-budget checks. A ZIP with the correct source
+files but modified wrapper metadata therefore fails. See
+[Milestone 36](docs/MILESTONE-36.md). The GitHub workflow result is the
+acceptance gate; locally passing tests are not a substitute.
+
+## Milestones 36–38 — Evidence integrity and cross-instance measurement correctness
+
+- **M36:** independently regenerate the entire canonical source ZIP and compare complete bytes, not just extracted contents. Changes to ZIP wrapper metadata cannot silently pass.
+- **M37:** audit authenticated metrics from *every active service JVM* against all producer HTTP records; do not invent aggregate rate/peak across unsynchronized monotonic clocks. See [`docs/MILESTONE-37.md`](docs/MILESTONE-37.md).
+- **M38:** record per-shard Linux kernel provenance without revealing raw boot IDs, and provide an opt-in fail-closed distinct-kernel evidence gate. Different self-reported boot hashes are **not proof of separate physical hosts**. See [`docs/MILESTONE-38.md`](docs/MILESTONE-38.md).
+
+The M35 source-hardening baseline passed its [GitHub Actions CI run](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41502346644). Changes after M35 require their own CI validation and must not be treated as verified merely because local tests passed.

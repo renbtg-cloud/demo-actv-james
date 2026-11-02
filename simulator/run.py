@@ -25,6 +25,7 @@ import concurrent.futures
 import shutil
 from workload import create_plan, validate_workload, schedule_seconds
 from cpu_placement import parse_cpus,format_cpus
+from host_provenance import snapshot as host_snapshot
 
 ROOT=pathlib.Path(__file__).resolve().parent
 
@@ -350,7 +351,7 @@ def run(argv=None):
     if args.verify_state:
         state_failures,state_counts=verify(args.url.rstrip('/'),os.environ.get('DEROYQUE_SIM_READ_TOKEN'),run_id,winner,ids,args.timeout_ms,args.await_done_seconds)
     lag=[e['schedule_lag_ms'] for e in records]
-    report={'run_id':run_id,'target':args.url,'resource_budget':resources,'plan':{'profile':args.profile,
+    report={'run_id':run_id,'target':args.url,'resource_budget':resources,'host_environment':host_snapshot(run_id),'plan':{'profile':args.profile,
        'distribution':args.distribution,'duration_seconds':args.duration_seconds,'seed':args.seed,
        'ramp_start_rate':args.ramp_start_rate,'burst_rate':args.burst_rate,
        'burst_width_seconds':args.burst_width_seconds,'burst_period_seconds':args.burst_period_seconds,

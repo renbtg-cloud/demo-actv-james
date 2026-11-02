@@ -224,8 +224,26 @@ jobs:
         with:
           name: deroyque-verified-source
           path: ${{ runner.temp }}/published-source
-      - name: Verify published ZIP against a fresh checkout of the same commit
+      - name: Rebuild canonical ZIP and compare entire bytes on fresh checkout
         run: |
           python3 -m unittest discover -s tests -p test_source_package.py -v
-          python3 scripts/package_source.py --verify-checkout \
+          python3 scripts/package_source.py --verify-reproducible \
             --root . --output "$RUNNER_TEMP/published-source/deroyque-git-source.zip"
+
+  simulator-lab-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Verify independent simulator, multi-JVM and host evidence contracts
+        run: |
+          python3 -m unittest discover -s simulator/tests -v

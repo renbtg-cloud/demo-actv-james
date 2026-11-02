@@ -70,6 +70,64 @@ class MergeTests(unittest.TestCase):
     def test_server_incomplete_write_is_rejected(self):
         m=self.server_snapshot();m['response_incomplete']=1
         self.assertEqual(merge(self.paths,server_metrics=m)['outcome'],'FAIL')
+    def multi_snapshots(self):
+        a=self.server_snapshot()
+        b=self.server_snapshot()
+        a.update(instance_id='service-A',started=5,finished=5,peak_inflight=2,http_202=2,http_409=3)
+        b.update(instance_id='service-B',started=7,finished=7,peak_inflight=3,http_202=2,http_409=5,
+                 first_start_elapsed_ns=1_000_000_000,last_finish_elapsed_ns=5_000_000_000)
+        return [a,b]
+    def test_two_service_instances_counters_audited_without_inventing_global_qps(self):
+        report=merge(self.paths,server_metrics=self.multi_snapshots())
+        self.assertEqual(report['outcome'],'PASS',report)
+        self.assertIsNone(report['global_throughput_qps'])
+        self.assertEqual(report['server_side']['scope'],'multiple_service_jvms_no_shared_monotonic_clock')
+        self.assertEqual(report['server_side']['instance_count'],2)
+        self.assertEqual(report['server_side']['total_finished'],12)
+        self.assertIsNone(report['server_side']['server_handler_peak_inflight'])
+        self.assertEqual({v['instance_id'] for v in report['server_side']['per_instance']},{'service-A','service-B'})
+    def test_omitted_second_service_cannot_pass(self):
+        report=merge(self.paths,server_metrics=self.multi_snapshots()[:1])
+        self.assertEqual(report['outcome'],'FAIL')
+        self.assertTrue(any('counts disagree' in s for s in report['harness_errors']))
+    def test_duplicate_service_identity_cannot_pass(self):
+        snapshots=self.multi_snapshots()
+        snapshots[1]['instance_id']=snapshots[0]['instance_id']
+        report=merge(self.paths,server_metrics=snapshots)
+        self.assertEqual(report['outcome'],'FAIL')
+        self.assertTrue(any('Duplicate' in s for s in report['harness_errors']))
+    def test_multi_service_status_disagreement_cannot_pass(self):
+        snapshots=self.multi_snapshots()
+        snapshots[1]['http_202']=3
+        snapshots[1]['http_409']=4
+        self.assertEqual(merge(self.paths,server_metrics=snapshots)['outcome'],'FAIL')
+    def test_invalid_metric_boolean_rejected(self):
+        snapshots=self.multi_snapshots()
+        snapshots[0]['http_202']=True
+        self.assertEqual(merge(self.paths,server_metrics=snapshots)['outcome'],'FAIL')
+    def set_kernel_fingerprints(self, a, b):
+        for folder, fingerprint in zip(self.paths,(a,b)):
+            file=folder/'summary.json'
+            data=json.loads(file.read_text())
+            data['host_environment']={'schema_version':1,'kernel_fingerprint':fingerprint}
+            file.write_text(json.dumps(data))
+    def test_same_kernel_does_not_qualify_as_independent(self):
+        self.set_kernel_fingerprints('a'*64,'a'*64)
+        report=merge(self.paths)
+        self.assertEqual(report['host_evidence']['status'],'SAME_KERNEL_OBSERVED')
+        self.assertEqual(report['outcome'],'PASS')  # idempotency still passed
+        fail=merge(self.paths,require_distinct_kernels=True)
+        self.assertEqual(fail['outcome'],'FAIL')
+    def test_distinct_kernel_reports_still_not_physical_proof(self):
+        self.set_kernel_fingerprints('a'*64,'b'*64)
+        report=merge(self.paths,require_distinct_kernels=True)
+        self.assertEqual(report['outcome'],'PASS',report)
+        self.assertEqual(report['host_evidence']['status'],'DISTINCT_KERNEL_REPORTS_UNVERIFIED')
+        self.assertIsNone(report['global_throughput_qps'])
+    def test_missing_host_provenance_explicit_gate_fails(self):
+        report=merge(self.paths,require_distinct_kernels=True)
+        self.assertEqual(report['outcome'],'FAIL')
+        self.assertEqual(report['host_evidence']['status'],'UNKNOWN_MISSING_OR_LEGACY_HOST_EVIDENCE')
     def test_missing_shard_cannot_pass(self):
         self.assertEqual(merge(self.paths[:1])['outcome'],'FAIL')
     def test_conflicting_configuration_rejected(self):

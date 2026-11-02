@@ -9,7 +9,7 @@ import tempfile
 import unittest
 import zipfile
 sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1]/'scripts'))
-from package_source import make_archive,verify_archive,verify_against_checkout
+from package_source import make_archive,verify_archive,verify_against_checkout,verify_reproducible
 
 
 class SourcePackageTest(unittest.TestCase):
@@ -145,6 +145,19 @@ class SourcePackageTest(unittest.TestCase):
                 verify_archive(self.output)
         finally:
             package_source.MAX_FILE_SIZE=original
+
+    def test_canonical_independent_rebuild_succeeds(self):
+        make_archive(self.root,self.output)
+        self.assertEqual(verify_reproducible(self.root,self.output)['files'],2)
+
+    def test_noncanonical_valid_zip_comment_rejected(self):
+        make_archive(self.root,self.output)
+        with zipfile.ZipFile(self.output,'a') as z:
+            z.comment=b'unsigned extra archive comment'
+        # Same source bytes/modes: old independent comparison still green.
+        self.assertEqual(verify_against_checkout(self.root,self.output)['files'],2)
+        with self.assertRaisesRegex(ValueError,'canonical independent rebuild'):
+            verify_reproducible(self.root,self.output)
 
     def test_unsafe_tracked_newline_name_rejected(self):
         (self.root/'unsafe\nname.txt').write_text('bad manifest text')
