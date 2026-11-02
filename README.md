@@ -8,7 +8,7 @@ This repository contains the **actual experimental source code**, not the older 
 integration jobs succeeded; the JWT security job reported **0/44 failed,
 44/44 passed**, including RSA rotation, outage and JOSE attack probes. See
 [GitHub Actions run 41493502623](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41493502623).
-Milestones 23–26 below introduce additional contracts and acceptance tests;
+Milestones 23–30 below introduce further acceptance and evidence gates;
 these **must not be claimed as CI-passing until their own run completes**.
 
 ## Layout
@@ -39,6 +39,15 @@ surrogate pairs remain valid JSON strings. See [Milestone 23](docs/MILESTONE-23.
 Only UTF-8 JSON is supported; contradictory/malformed charset parameters and
 non-UTF-8 declarations return 415 before any database writes. See
 [Milestone 24](docs/MILESTONE-24.md).
+
+## Milestone 30 — Fail-closed CI evidence audit
+
+After each real integration job, a separate validator checks the JSON evidence
+file for a complete positive assertion list, zero exit code, scenario-specific
+proof flags and minimum baseline coverage. Jobs fail if the evidence is empty,
+inconsistent or does not prove external effects where required. Sanitized
+counts are added to the GitHub Actions job summary. See
+[Milestone 30](docs/MILESTONE-30.md).
 
 ## Milestone 29 — Cross-language differential JSON acceptance
 

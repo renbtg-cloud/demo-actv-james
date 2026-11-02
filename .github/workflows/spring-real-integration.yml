@@ -21,6 +21,8 @@ on:
       - 'tests/java/demo/StrictJsonUnicodePropertyTest.java'
       - 'tests/java/demo/StrictJsonOracle.java'
       - 'tests/test_json_python_oracle.py'
+      - 'tests/test_ci_evidence_gate.py'
+      - 'scripts/ci_evidence_gate.py'
       - 'tests/jwt_adversarial_vectors.py'
       - 'tests/jwks_rotation_fixture.py'
       - 'scripts/local_keycloak.py'
@@ -48,6 +50,8 @@ on:
       - 'tests/java/demo/StrictJsonUnicodePropertyTest.java'
       - 'tests/java/demo/StrictJsonOracle.java'
       - 'tests/test_json_python_oracle.py'
+      - 'tests/test_ci_evidence_gate.py'
+      - 'scripts/ci_evidence_gate.py'
       - 'tests/jwt_adversarial_vectors.py'
       - 'tests/jwks_rotation_fixture.py'
       - 'scripts/local_keycloak.py'
@@ -168,4 +172,11 @@ jobs:
             python3 -u tests/run_spring_chaos.py --scenario "${{ matrix.scenario }}" --boot-jar adapter-springboot/target/deroyque-springboot-0.10.0-SNAPSHOT.jar --output "$RUNNER_TEMP/spring-chaos-result.json"
             cat "$RUNNER_TEMP/spring-chaos-result.json"
           fi
+      - name: Validate assertion evidence — ${{ matrix.scenario }}
+        run: |
+          python3 -m unittest discover -s tests -p test_ci_evidence_gate.py -v
+          python3 scripts/ci_evidence_gate.py \
+            --scenario "${{ matrix.scenario }}" \
+            --result-dir "$RUNNER_TEMP" \
+            --summary-path "$GITHUB_STEP_SUMMARY"
       # No raw JVM/provider logs, database dumps, keys, or credentials are uploaded.
