@@ -139,7 +139,7 @@ def competing(jar):
         peers=[]
         for i in range(3):
             sp=port();role=f'recovery-{mode}-{i}';p=spawn(role,['java','-Xmx320m','-jar',str(jar)],
-                 {**boot_env(schema,q,sp,pp),'P17_HOLD_BEFORE_RETRY_HTTP_MS':'4000'})
+                 boot_env(schema,q,sp,pp))
             peers.append((role,p,sp))
         check(len({p.pid for _,p,_ in peers})==3 and all(p.poll() is None for _,p,_ in peers),
               mode+': three independent recovering Spring JVM processes launched concurrently')
@@ -147,6 +147,10 @@ def competing(jar):
             check(bool(until(lambda p=p,sp=sp:p.poll() is None and http(server_url(sp)+'/api/v1/health/readiness')[0]==200,60)),
                   mode+': '+role+' ready on same database and queue')
         final=until(lambda:observe(schema,key) if (observe(schema,key) or {}).get('stage')=='DONE' else None,90)
+        if final is None:
+            snapshot=observe(schema,key)
+            print('COMPETING_RECOVERY_DIAG '+json.dumps({'window':mode,'state':snapshot,'effects':effects(key),
+                 'peer_liveness':[p.poll() is None for _,p,_ in peers]},sort_keys=True),flush=True)
         check(final and final['signed']>=1 and final['settlements']>=1,mode+': concurrent recovery reached DONE with signed settlement')
         check(effects(key)==1 and no_incidents(schema,key),mode+': one effect, no contradictory incidents')
         if mode=='after-observe':check(posts(key)==previous_posts,mode+': no provider POST after durable signed proof')
