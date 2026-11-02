@@ -7,7 +7,7 @@ checks Flyway migrations that Spring must apply to a fresh PostgreSQL schema.
 it is never a substitute for a Boot runtime result.
 PostgreSQL/RabbitMQ servers are never stopped or dropped.
 """
-import argparse, json, os, pathlib, secrets, signal, socket, sqlite3, subprocess, sys, tempfile, time, urllib.error, urllib.request, uuid
+import argparse, json, re, os, pathlib, secrets, signal, socket, sqlite3, subprocess, sys, tempfile, time, urllib.error, urllib.request, uuid
 
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 PARSER=argparse.ArgumentParser(description=__doc__)
@@ -175,7 +175,16 @@ def adversarial_spring_test(jar,base_env):
     must(CHILDREN[1][0].poll() is None,'surviving Spring JVM remained alive after peer crash')
     try:sim.wait(timeout=160)
     except subprocess.TimeoutExpired:raise RuntimeError('adversarial load generator exceeded 160s')
-    if sim.returncode!=0:simulator_diagnostics(simdir,sim.returncode)
+    if sim.returncode!=0:
+        simulator_diagnostics(simdir,sim.returncode)
+        # Only predefined SQLState codes and counts from local Spring process logs.
+        # No plaintext error messages or request bodies enter CI output.
+        import collections
+        for role in ('service','spring-peer'):
+            log_file=TMPPATH/(role+'.log')
+            if log_file.exists():
+                states=collections.Counter(re.findall(r'DEROYQUE_ADMISSION_SQLSTATE ([A-Z0-9]{5})',log_file.read_text(errors='replace')))
+                print('ADMISSION_SQLSTATES '+role+' '+json.dumps(states,sort_keys=True),flush=True)
     must(sim.returncode==0,'multi-JVM simulator finished and validated every generated request')
     report=json.loads((simdir/'summary.json').read_text()) if (simdir/'summary.json').exists() else {}
     observed=report.get('observed',{})
@@ -217,14 +226,15 @@ def run():
       'SPRING_FLYWAY_SCHEMAS':SCHEMA,'SPRING_FLYWAY_DEFAULT_SCHEMA':SCHEMA,
       'P13_PROVIDER_URL':f'http://127.0.0.1:{PROVIDER}/activate',
       'P19_RECONCILE_URL':f'http://127.0.0.1:{PROVIDER}/lookup',
-      'P16_PROVIDER_RETENTION_MS':'0','P20_SIGNED_LOOKUP_REQUIRED':'1',
+      'P16_PROVIDER_RETENTION_MS':'300000','P20_SIGNED_LOOKUP_REQUIRED':'1',
       'P20_PUBLIC_KEY_PEM':str(ROOT/'fixtures/keys/provider-test-public.pem'),
       'P20_EXPECTED_ISSUER':'deroyque-lab-provider','P20_EXPECTED_KID':'lab-key-01',
-      'APP_API_ENABLED':'1','APP_LAB_METRICS_ENABLED':'0','APP_READ_TOKEN':READ,'APP_WRITE_TOKEN':WRITE,
+      'APP_API_ENABLED':'1','APP_LAB_METRICS_ENABLED':'0',
+      'APP_LAB_DIAGNOSTICS_ENABLED':'1','APP_ADMISSION_MAX_IN_FLIGHT':'32','APP_ADMISSION_WAIT_MS':'8000','APP_READ_TOKEN':READ,'APP_WRITE_TOKEN':WRITE,
     }
     provider_env={
        'P19_PROVIDER_SQLITE':str(TMPPATH/'provider.sqlite3'),'P19_PROVIDER_PORT':str(PROVIDER),
-       'P19_PROVIDER_RETENTION_MS':'60000','P20_PRIVATE_KEY_PEM':str(ROOT/'fixtures/keys/provider-test-private.pem'),
+       'P19_PROVIDER_RETENTION_MS':'600000','P20_PRIVATE_KEY_PEM':str(ROOT/'fixtures/keys/provider-test-private.pem'),
        'P20_ISSUER':'deroyque-lab-provider','P20_KID':'lab-key-01'
     }
     prov=start('provider',['python3','-u',str(ROOT/'provider/independent_provider.py')],provider_env)

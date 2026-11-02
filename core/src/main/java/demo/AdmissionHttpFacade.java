@@ -4,6 +4,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Map;
 import java.util.Set;
+import java.sql.SQLException;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 
 /** Framework-neutral admission/status mapping for the Spring MVC entrypoint.
  * Same laboratory bearer-token semantics and strict JSON input as the legacy adapter.
@@ -14,6 +17,28 @@ public final class AdmissionHttpFacade {
   private final RequestOperations requests;
   private final byte[] readToken, writeToken;
   private final IngressMeasurements metrics;
+  /** Bounded admission: this JVM cannot create unbounded simultaneous JDBC connections
+   * from HTTP requests. Unlike monitoring, admission backpressure is part of normal safety.
+   * The default is deliberately below PostgreSQL's common 100-connection limit, leaving
+   * capacity for the engine, watchdog, outbox and sibling JVMs. This is a per-instance
+   * limit, NOT a distributed connection pool or a claim of global capacity.
+   */
+  private final Semaphore admissionSlots;
+  private final long admissionWaitMs;
+  private static int configInt(String name,int fallback,int min,int max){
+    String raw=System.getenv(name);
+    int n=raw==null||raw.isBlank()?fallback:Integer.parseInt(raw);
+    if(n<min||n>max)throw new IllegalArgumentException(name+" must be "+min+".."+max);
+    return n;
+  }
+  private static void diagnoseUnavailable(Throwable failure){
+    if(!"1".equals(System.getenv("APP_LAB_DIAGNOSTICS_ENABLED")))return;
+    Throwable cursor=failure;
+    while(cursor!=null && !(cursor instanceof SQLException))cursor=cursor.getCause();
+    String state=cursor instanceof SQLException sql?sql.getSQLState():"UNAVAILABLE_UNCLASSIFIED";
+    // SQLState only: never emit SQL text, payloads, tokens, or exception messages.
+    System.err.println("DEROYQUE_ADMISSION_SQLSTATE "+state);
+  }
   public AdmissionHttpFacade(RequestOperations requests,String read,String write,boolean metricsEnabled){
     if(read==null||write==null||read.length()<24||write.length()<24||read.equals(write))
       throw new IllegalArgumentException("APP_READ_TOKEN and APP_WRITE_TOKEN must be distinct and >=24 chars");
@@ -21,6 +46,8 @@ public final class AdmissionHttpFacade {
     this.readToken=read.getBytes(StandardCharsets.UTF_8);
     this.writeToken=write.getBytes(StandardCharsets.UTF_8);
     this.metrics=metricsEnabled?new IngressMeasurements():null;
+    this.admissionSlots=new Semaphore(configInt("APP_ADMISSION_MAX_IN_FLIGHT",32,1,256),true);
+    this.admissionWaitMs=configInt("APP_ADMISSION_WAIT_MS",8000,1,30000);
   }
   private boolean allowed(String auth,boolean writing){
     byte[] candidate=(auth!=null&&auth.startsWith("Bearer ")?auth.substring(7):"").getBytes(StandardCharsets.UTF_8);
@@ -42,7 +69,13 @@ public final class AdmissionHttpFacade {
     IngressMeasurements.Ticket ticket=null;
     if(metrics!=null&&IngressMeasurements.validRun(run)&&input.get("externalId").startsWith(run+"-"))ticket=metrics.begin(run);
     int code=0;
+    boolean admitted=false;
     try{
+      try {admitted=admissionSlots.tryAcquire(admissionWaitMs,TimeUnit.MILLISECONDS);}
+      catch(InterruptedException interrupted){
+        Thread.currentThread().interrupt();code=503;return err(code,"ADMISSION_INTERRUPTED_RETRY_SAME_EXTERNAL_ID");
+      }
+      if(!admitted){code=503;return err(code,"ADMISSION_BUSY_RETRY_SAME_EXTERNAL_ID");}
       RequestOperations.Admission outcome=requests.create(input.get("externalId"),input.get("customerId"),input.get("productCode"));
       switch(outcome.status()){
         case CREATED: case REPLAY:
@@ -52,9 +85,14 @@ public final class AdmissionHttpFacade {
         case UNCERTAIN: code=503;return err(code,"COMMIT_OUTCOME_UNKNOWN_RETRY_SAME_EXTERNAL_ID");
         default: code=503;return err(code,"ADMISSION_NOT_CONFIRMED");
       }
-    }catch(RequestOperations.DataAccessUnavailable e){code=503;return err(code,"DATABASE_UNAVAILABLE_OR_OUTCOME_UNCERTAIN");}
+    }catch(RequestOperations.DataAccessUnavailable e){
+      diagnoseUnavailable(e);code=503;return err(code,"DATABASE_UNAVAILABLE_OR_OUTCOME_UNCERTAIN");
+    }
      catch(Exception e){code=500;return err(code,"INTERNAL_ERROR");}
-    finally{if(ticket!=null)metrics.finish(ticket,code);}
+    finally{
+      if(admitted)admissionSlots.release();
+      if(ticket!=null)metrics.finish(ticket,code);
+    }
   }
   public Reply find(String authorization,String id){
     if(!allowed(authorization,false))return err(401,"UNAUTHORIZED");

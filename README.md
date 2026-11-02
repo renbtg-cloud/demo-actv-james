@@ -76,3 +76,21 @@ Crash injection does not prove the killed worker personally contacted the
 provider before it died; it tests recovery from abrupt peer loss during a
 concurrent workload. Idempotency guarantees still depend on the external
 provider contract.
+
+
+### Concurrent admission and crash-test configuration
+
+`APP_ADMISSION_MAX_IN_FLIGHT` (default 32) bounds simultaneous HTTP admissions
+per service JVM, reserving room for worker/database connections.
+`APP_ADMISSION_WAIT_MS` (default 8000) is the maximum wait for an admission
+slot; timeout responds 503 with an explicit same-key retry instruction.
+This is admission backpressure, **not** optional observability.
+`APP_LAB_DIAGNOSTICS_ENABLED=1` emits **only SQLState codes** for database
+unavailability (OFF by default); no SQL, credentials, or request payloads.
+
+The CI adversarial provider is explicitly configured for a finite 600-second
+idempotency-key retention contract, with the application using a conservative
+300-second authorization window. This is necessary for intentional JVM-crash
+retries; retention=unknown would correctly pause uncertain attempts instead.
+The simulator remains at 24 producer JVMs x 8 HTTP operations in the full
+GitHub Actions stress plan; admission backpressure is exercised on the server.
