@@ -29,4 +29,22 @@ Requires Docker with Keycloak image access, Java 21, Maven, PostgreSQL 17, Rabbi
 - Key rotation, token revocation, identity-provider downtime, multi-tenant authorization and operational secret management remain separate unvalidated concerns.
 - The signed provider evidence uses separate test-only credentials; its authenticity is distinct from the OAuth2 client token.
 
-**Acceptance status**: evaluate the `oidc-keycloak` CI job and record its exact verified result; a passing Maven build alone is not sufficient.
+## Verified acceptance evidence
+
+On 2 November 2026, GitHub Actions [run 41469917139](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41469917139), commit `ebf145d293ffffbe9edb75b91b98d1f029118cee`, completed **eight real Spring Boot jobs with 0/238 failed checks; 238/238 passed**:
+
+| Scenario | Failures / total | Passed / total |
+|---|---:|---:|
+| Genuine Keycloak OIDC `client_credentials` | 0/26 | 26/26 |
+| Locally signed JWT rejection and scope acceptance | 0/23 | 23/23 |
+| Four-JVM contention for the same PostgreSQL row | 0/22 | 22/22 |
+| Exact crash windows | 0/44 | 44/44 |
+| Three competing Spring recovery JVMs | 0/44 | 44/44 |
+| PostgreSQL / RabbitMQ interruptions | 0/19 | 19/19 |
+| Late and contradictory signed evidence | 0/16 | 16/16 |
+| Four Spring workers, two `SIGKILL`s, 24 producer JVMs | 0/44 | 44/44 |
+| **Total** | **0/238** | **238/238** |
+
+The Keycloak test exercised OIDC discovery, actual service-account token issuance for separate clients, wrong audience and cross-realm rejection, HTTP 202/200/409 semantics, `DONE` after asynchronous processing, one independent external SQLite effect and stored signed provider proof. The high-load regression completed 960 HTTP POSTs across 24 overlapping producer JVMs, 160 unique keys and 160 effects.
+
+These tests demonstrate the specified behavior in isolated CI—not a production-grade identity-provider deployment, formal security verification or universal exactly-once guarantee.
