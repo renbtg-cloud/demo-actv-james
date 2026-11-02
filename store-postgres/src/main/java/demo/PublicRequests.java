@@ -26,7 +26,7 @@ public final class PublicRequests implements RequestOperations {
   }
   @Override public Admission create(String externalId,String customerId,String productCode)throws DataAccessUnavailable {
     try { return createInDatabase(externalId, customerId, productCode); }
-    catch(SQLException e){ throw new DataAccessUnavailable(e); }
+    catch(SQLException e){ throw new DataAccessUnavailable(e,e.getSQLState()); }
   }
   private Admission createInDatabase(String externalId,String customerId,String productCode)throws SQLException{
     String hash=fingerprint(customerId,productCode);
@@ -65,7 +65,7 @@ public final class PublicRequests implements RequestOperations {
   }
   @Override public Detail find(String id)throws DataAccessUnavailable {
     try { return findInDatabase(id); }
-    catch(SQLException e){ throw new DataAccessUnavailable(e); }
+    catch(SQLException e){ throw new DataAccessUnavailable(e,e.getSQLState()); }
   }
   private Detail findInDatabase(String id)throws SQLException{
     try(Connection c=ledger.connect();PreparedStatement p=c.prepareStatement(

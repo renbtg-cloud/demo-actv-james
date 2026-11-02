@@ -4,7 +4,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Map;
 import java.util.Set;
-import java.sql.SQLException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
@@ -31,13 +30,12 @@ public final class AdmissionHttpFacade {
     if(n<min||n>max)throw new IllegalArgumentException(name+" must be "+min+".."+max);
     return n;
   }
-  private static void diagnoseUnavailable(Throwable failure){
+  private static void diagnoseUnavailable(RequestOperations.DataAccessUnavailable failure){
     if(!"1".equals(System.getenv("APP_LAB_DIAGNOSTICS_ENABLED")))return;
-    Throwable cursor=failure;
-    while(cursor!=null && !(cursor instanceof SQLException))cursor=cursor.getCause();
-    String state=cursor instanceof SQLException sql?sql.getSQLState():"UNAVAILABLE_UNCLASSIFIED";
-    // SQLState only: never emit SQL text, payloads, tokens, or exception messages.
-    System.err.println("DEROYQUE_ADMISSION_SQLSTATE "+state);
+    // Core has no JDBC dependency and emits only a validated 5-character SQLState.
+    String code=failure.diagnosticCode();
+    if(code.matches("[A-Z0-9]{5}"))
+      System.err.println("DEROYQUE_ADMISSION_SQLSTATE "+code);
   }
   public AdmissionHttpFacade(RequestOperations requests,String read,String write,boolean metricsEnabled){
     if(read==null||write==null||read.length()<24||write.length()<24||read.equals(write))

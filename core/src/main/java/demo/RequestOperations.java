@@ -11,7 +11,14 @@ public interface RequestOperations {
     String status,long attempts,long version,long incidentCount,long signedEvidenceCount) {}
   /** Database, network, or storage failures are deliberately hidden from HTTP adapters. */
   final class DataAccessUnavailable extends Exception {
-    public DataAccessUnavailable(Throwable cause) { super("data access unavailable", cause); }
+    private final String diagnosticCode;
+    public DataAccessUnavailable(Throwable cause) { this(cause,null); }
+    public DataAccessUnavailable(Throwable cause,String code) {
+      super("data access unavailable",cause);
+      this.diagnosticCode=(code!=null&&code.matches("[A-Z0-9]{5}"))?code:"UNCLASSIFIED";
+    }
+    /** Non-secret classification only; no database library type crosses this interface. */
+    public String diagnosticCode(){return diagnosticCode;}
   }
   Admission create(String externalId,String customerId,String productCode) throws DataAccessUnavailable;
   Detail find(String id) throws DataAccessUnavailable;
