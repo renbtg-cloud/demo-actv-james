@@ -40,6 +40,15 @@ Only UTF-8 JSON is supported; contradictory/malformed charset parameters and
 non-UTF-8 declarations return 415 before any database writes. See
 [Milestone 24](docs/MILESTONE-24.md).
 
+## Milestone 31 — Git-tracked-only reproducible source artifact
+
+A separate GitHub Actions job now builds a deterministic ZIP using **only Git-
+tracked files**, embeds SHA-256 manifests, verifies every entry and publishes
+a short-retention source artifact. Untracked `.local` secrets, SQLite files and
+runner scratch data cannot enter via directory globs. The local packaging
+regression checks byte reproducibility, corruption and path-traversal cases.
+See [Milestone 31](docs/MILESTONE-31.md).
+
 ## Milestone 30 — Fail-closed CI evidence audit
 
 After each real integration job, a separate validator checks the JSON evidence

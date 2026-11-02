@@ -23,6 +23,8 @@ on:
       - 'tests/test_json_python_oracle.py'
       - 'tests/test_ci_evidence_gate.py'
       - 'scripts/ci_evidence_gate.py'
+      - 'scripts/package_source.py'
+      - 'tests/test_source_package.py'
       - 'tests/jwt_adversarial_vectors.py'
       - 'tests/jwks_rotation_fixture.py'
       - 'scripts/local_keycloak.py'
@@ -52,6 +54,8 @@ on:
       - 'tests/test_json_python_oracle.py'
       - 'tests/test_ci_evidence_gate.py'
       - 'scripts/ci_evidence_gate.py'
+      - 'scripts/package_source.py'
+      - 'tests/test_source_package.py'
       - 'tests/jwt_adversarial_vectors.py'
       - 'tests/jwks_rotation_fixture.py'
       - 'scripts/local_keycloak.py'
@@ -180,3 +184,26 @@ jobs:
             --result-dir "$RUNNER_TEMP" \
             --summary-path "$GITHUB_STEP_SUMMARY"
       # No raw JVM/provider logs, database dumps, keys, or credentials are uploaded.
+
+  source-archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test deterministic packaging and archive-integrity checks
+        run: |
+          python3 -m unittest discover -s tests -p test_source_package.py -v
+          python3 scripts/package_source.py --root . --output "$RUNNER_TEMP/deroyque-git-source.zip"
+          python3 scripts/package_source.py --verify-only --output "$RUNNER_TEMP/deroyque-git-source.zip"
+      - name: Publish Git-tracked-only source bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: deroyque-verified-source
+          path: ${{ runner.temp }}/deroyque-git-source.zip
+          if-no-files-found: error
+          retention-days: 7
