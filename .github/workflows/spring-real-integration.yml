@@ -9,6 +9,7 @@ on:
       - 'adapter-httpjdk/**'
       - 'runtime-rabbit/**'
       - 'tests/run_spring_live_acceptance.py'
+      - 'tests/run_spring_fault_windows.py'
       - 'simulator/**'
       - 'provider/**'
       - 'scripts/test-spring-real.sh'
@@ -21,6 +22,7 @@ on:
       - 'adapter-httpjdk/**'
       - 'runtime-rabbit/**'
       - 'tests/run_spring_live_acceptance.py'
+      - 'tests/run_spring_fault_windows.py'
       - 'simulator/**'
       - 'provider/**'
       - 'scripts/test-spring-real.sh'
@@ -29,6 +31,10 @@ jobs:
   real-spring-boot:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [staggered-crashes, exact-fault-windows]
     services:
       postgres:
         image: postgres:17
@@ -67,7 +73,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y postgresql-client
           python -m pip install 'cryptography>=42,<50'
-      - name: Build real Spring Boot and test automatic Flyway on fresh schema
+      - name: Build and test real Spring Boot — ${{ matrix.scenario }}
         env:
           DEROYQUE_PSQL: psql
           DEROYQUE_PG_HOST: 127.0.0.1
@@ -80,6 +86,12 @@ jobs:
           P13_RABBIT_USER: deroyque_ci
           P13_RABBIT_PASSWORD: lab-ci-only-rabbit-password
         run: |
-          ./scripts/test-spring-real.sh --adversarial-max-jvms 24 --adversarial-service-jvms 4 --adversarial-crashes 2 --output "$RUNNER_TEMP/spring-real-result.json"
-          cat "$RUNNER_TEMP/spring-real-result.json"
+          if [[ "${{ matrix.scenario }}" == "staggered-crashes" ]]; then
+            ./scripts/test-spring-real.sh --adversarial-max-jvms 24 --adversarial-service-jvms 4 --adversarial-crashes 2 --output "$RUNNER_TEMP/spring-real-result.json"
+            cat "$RUNNER_TEMP/spring-real-result.json"
+          else
+            mvn -B -ntp -f adapter-springboot/pom.xml clean package
+            python3 -u tests/run_spring_fault_windows.py --boot-jar adapter-springboot/target/deroyque-springboot-0.10.0-SNAPSHOT.jar --output "$RUNNER_TEMP/spring-fault-windows.json"
+            cat "$RUNNER_TEMP/spring-fault-windows.json"
+          fi
       # No raw JVM/provider logs, database dumps, keys, or credentials are uploaded.
