@@ -15,7 +15,7 @@ def report(scenario):
     if scenario=='staggered-crashes':d.update(mode='boot',flyway_runtime_verified=True,engine_completed=True,adversarial={'spring_service_jvms_started':4})
     elif scenario=='jwt-security':d['signed_effect_verified']=True
     elif scenario in ('oidc-keycloak','local-keycloak'):d.update(issuer_verified=True,signed_provider_effect_verified=True)
-    elif scenario=='gateway-witness':d.update(completed=True, measurement={'global_recorded_posts':80,'global_throughput_qps':50.0,'gateway_witness':{'total_http_responses':80,'backend_count':2},'verified_states':{'DONE':20}})
+    elif scenario=='gateway-witness':d.update(completed=True,business_effects=20,durable_requests=20,signed_attestations=20, measurement={'global_recorded_posts':80,'global_throughput_qps':50.0,'gateway_witness':{'total_http_responses':80,'backend_count':2},'verified_states':{'DONE':20}})
     elif scenario=='same-row-contention':d.update(completed=True,business_effects=1)
     else:d['cases']=[{'case':'real'}]
     return d
@@ -64,6 +64,11 @@ class EvidenceGateTest(unittest.TestCase):
     def test_false_gateway_witness_claim_fails_closed(self):
         data=report('gateway-witness')
         data['measurement']['gateway_witness']['backend_count']=1
+        with self.assertRaises(ValueError):validate('gateway-witness',data)
+
+    def test_gateway_signed_evidence_is_mandatory(self):
+        data=report('gateway-witness')
+        data['signed_attestations']=19
         with self.assertRaises(ValueError):validate('gateway-witness',data)
 
     def test_boolean_not_integer(self):

@@ -6,6 +6,7 @@ clock synchronization between machines is deliberately NOT inferred from this to
 """
 import argparse
 import collections
+import hashlib
 import json
 import pathlib
 import sys
@@ -172,7 +173,13 @@ def merge(folders,verify_state=False,await_done_seconds=0,timeout_ms=8000,token=
     host_evidence = evaluate_provenance(host_snapshots, run_id)
     if require_distinct_kernels and host_evidence['status'] != 'DISTINCT_KERNEL_REPORTS_UNVERIFIED':
         errors.append('independent-kernel evidence required but not established: '+host_evidence['status'])
+    # Stable workload identity across repetitions (exclude absolute UTC launch barrier).
+    # This does not by itself prove identical hardware or runtime configuration.
+    workload_spec={k:plan.get(k) for k in PLAN_FIELDS if k!='start_at_ms'}
+    signature=hashlib.sha256(json.dumps(workload_spec,sort_keys=True,separators=(',',':'),
+                                       allow_nan=False).encode('utf-8')).hexdigest()
     result={'run_id':run_id,'target':target,'shard_count':plan['shard_count'],
+        'workload_sha256':signature,
         'shards_received':len(seen_shards),'global_requested_posts':plan['global_attempted_posts'],
         'global_recorded_posts':len(all_records),'global_keys':plan['shared_keys'],
         'total_producer_jvms':sum(c['jvms'] for c in chunks),

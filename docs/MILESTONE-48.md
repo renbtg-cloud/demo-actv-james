@@ -1,0 +1,5 @@
+# Milestone 48 — Cross-layer durable signed proof in gateway CI
+
+The real two-Spring-JVM gateway acceptance now checks not merely the 20 final status reads and 20 effects in the independent SQLite provider, but also the exact 20 durable request rows, 20 dispatch records, 20 settlement records and 20 signed attestation rows in PostgreSQL for the same run identity. All counts must agree in the same isolated schema after the workload reaches its terminal state. The fail-closed CI evidence validator requires explicit `business_effects=20`, `durable_requests=20` and `signed_attestations=20` fields, in addition to the previous independent one-clock gateway evidence and assertion list.
+
+This cross-store reconciliation establishes consistency for **this test under the provider's idempotency-retention contract**. It cannot prove semantic globally exactly-once HTTP effects against arbitrary real providers, and a signature verifies origin/integrity of a declaration rather than its truthfulness. The scenario still runs on one CI host, not independent physical nodes.

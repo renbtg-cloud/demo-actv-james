@@ -4,12 +4,11 @@
 
 This repository contains the **actual experimental source code**, not the older documentation-only preview. The three primary deliverables are the asynchronous activation service, an independent HTTP provider simulator, and a configurable multi-JVM incoming-transaction simulator. They are developed as one evolving system.
 
-**Earlier verified baseline (2 November 2026, Milestone 22):** all nine real Spring
-integration jobs succeeded; the JWT security job reported **0/44 failed,
-44/44 passed**, including RSA rotation, outage and JOSE attack probes. See
-[GitHub Actions run 41493502623](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41493502623).
-Milestones 23–30 below introduce further acceptance and evidence gates;
-these **must not be claimed as CI-passing until their own run completes**.
+**Verified baseline (2 November 2026, Milestone 43):** all 13 GitHub
+Actions jobs succeeded, including the two-Spring-JVM gateway witness with
+**0/19 failed, 19/19 passed**. See [GitHub Actions run 41511868650](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41511868650).
+Milestones 44–48 add additional tests and measurement evidence, whose real CI
+verdict must be checked independently against the new workflow run.
 
 ## Milestones 39–43 — One-clock ingress witness and real distributed-workload verification
 
@@ -23,6 +22,28 @@ PostgreSQL/RabbitMQ/SQLite effects, two Spring JVM counters and four real Java
 producer processes. **Real integration status is determined only by its GitHub
 Actions job**, not the local fake-backend regression. See `docs/MILESTONE-39.md`
 through `docs/MILESTONE-43.md`.
+
+## Milestones 44–46 — Delivery, latency and repeated-trial honesty
+
+Gateway evidence now distinguishes *upstream responses* from best-effort
+*downstream socket delivery*, rejects observed delivery failures, and provides
+a bounded fixed-bin round-trip histogram whose counters must reconcile.
+`simulator/trial_compare.py` rejects incomparable workloads or missing terminal
+states and reports only descriptive rates across three or more completed
+independent trials. The current repository does **not** claim to have completed
+a long-duration production-grade benchmarking campaign. See
+`docs/MILESTONE-44.md` through `docs/MILESTONE-46.md`.
+
+## Milestones 47–48 — Race-free measurement closure and cross-store proof
+
+The witness now keeps an HTTP admission in flight through the **downstream
+socket-delivery attempt**, even though its measured latency stops when the
+upstream reply is read. A concurrent snapshot cannot falsely appear complete
+while a client send is blocked. The real Spring CI experiment also requires
+agreement of 20 database requests, dispatches, settlements, signed attestations
+and separately persisted provider effects. These are bounded scenario proofs,
+not universal exactly-once guarantees. See `docs/MILESTONE-47.md` and
+`docs/MILESTONE-48.md`.
 
 ## Layout
 

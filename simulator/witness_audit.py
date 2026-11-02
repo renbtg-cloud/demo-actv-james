@@ -22,14 +22,15 @@ def verify_witness(source, run_id, records, statuses):
                 report.get('scope') != 'single_loopback_gateway_monotonic_response_clock'):
             raise ValueError('Witness schema, scope or run identity mismatch')
         fields = ('started', 'finished', 'inflight', 'peak_inflight', 'first_forward_ns',
-                  'last_reply_ns', 'transport_errors', 'local_rejections')
+                  'last_reply_ns', 'transport_errors', 'local_rejections',
+                  'client_delivery_failures')
         if any(type(report.get(k)) is not int or report[k] < 0 for k in fields):
             raise ValueError('Witness contains invalid numeric counters')
         if (report['started'] != report['finished'] or report['inflight'] != 0 or
                 report['finished'] != len(records)):
             raise ValueError('Witness counts disagree with complete producer evidence')
-        if report['transport_errors'] or report['local_rejections']:
-            raise ValueError('Witness recorded transport errors or locally rejected requests')
+        if report['transport_errors'] or report['local_rejections'] or report['client_delivery_failures']:
+            raise ValueError('Witness recorded transport errors, local rejections or failed downstream delivery')
         if not (0 < report['first_forward_ns'] < report['last_reply_ns'] and
                 1 <= report['peak_inflight'] <= report['started']):
             raise ValueError('Witness measured an invalid monotonic interval / concurrency')
@@ -37,6 +38,15 @@ def verify_witness(source, run_id, records, statuses):
                 not isinstance(k, str) or not k.isdecimal() or type(v) is not int or v < 0
                 for k, v in report['statuses'].items()):
             raise ValueError('Invalid witness HTTP status counters')
+        buckets = report.get('backend_latency_buckets')
+        limits = ('lt_1ms', 'lt_5ms', 'lt_10ms', 'lt_25ms', 'lt_50ms',
+                  'lt_100ms', 'lt_250ms', 'lt_500ms', 'lt_1000ms',
+                  'lt_5000ms', 'lt_20000ms', 'ge_20000ms')
+        if (not isinstance(buckets, dict) or any(
+                k not in limits or type(v) is not int or v < 0
+                for k, v in buckets.items()) or
+                sum(buckets.values()) != report['finished']):
+            raise ValueError('Missing, forged or incomplete gateway latency histogram')
         expected = {str(k): int(v) for k, v in statuses.items() if int(v) > 0}
         if {k: v for k, v in report['statuses'].items() if v > 0} != expected:
             raise ValueError('Witness HTTP statuses disagree with producer evidence')
@@ -74,9 +84,10 @@ def verify_witness(source, run_id, records, statuses):
                 'gateway_window_seconds': round(duration, 6),
                 'gateway_peak_inflight': report['peak_inflight'],
                 'total_http_responses': report['finished'],
+                'backend_latency_buckets': {k:buckets.get(k,0) for k in limits},
                 'backend_count': len(per),
                 'backends': [{'index': x['index'], 'finished': x['finished']} for x in per],
-                'measurement_note': 'All observed HTTP response completions measured by ONE gateway monotonic clock. Includes proxy overhead; not provider-effect throughput or service-only saturation. Witness is self-reported, unauthenticated laboratory evidence.'}, []
+                'measurement_note': 'One gateway monotonic clock from first forwarding to last fully read UPSTREAM response (not downstream client ACK). Histogram includes proxy/network and backend latency; not provider-effect throughput or service-only saturation. Self-reported, unauthenticated lab evidence.'}, []
     except (OSError, TypeError, ValueError, KeyError, OverflowError, json.JSONDecodeError) as exc:
         errors.append(f'Untrusted witness evidence rejected: {exc}')
     return None, errors

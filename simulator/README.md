@@ -115,3 +115,19 @@ python3 simulator/distributed_merge.py --gateway-witness witness.json \
 ```
 
 **Never expose the witness directly on a network.** It binds exclusively to loopback and permits only loopback backend listeners. For distributed hosts, use authenticated encrypted tunnels and document their conditions; distinct kernel reports are still not verified physical independence. The witness forwards bearer authorization without logging it. Gateway QPS includes gateway overhead and is NOT provider effect throughput; errors, inconsistent counters and incomplete evidence block success. The real Spring Boot/SQLite acceptance is a separate GitHub CI scenario; see `docs/MILESTONE-42.md`.
+
+## Milestones 44–46 — Measurement limits and trial comparison
+
+The witness histogram captures **backend HTTP round-trip latency as seen at the
+loopback gateway**, not queue completion, provider effects or downstream client
+receipt. Failed socket writes to the client are counted and cause the global
+auditor to refuse an unqualified PASS. The gateway must not be exposed directly
+to external networks.
+
+After three or more complete, independent runs with `distributed_merge.py
+--verify-state --gateway-witness ... --output merged.json`, use
+`python3 simulator/trial_compare.py run1/merged.json run2/merged.json
+run3/merged.json --output benchmark-comparison.json`.
+The comparator demands identical workload SHA-256, terminal states and gateway
+evidence and produces descriptive median/MAD rather than an invented capacity
+limit. See the detailed methodological limits in `docs/MILESTONE-46.md`.

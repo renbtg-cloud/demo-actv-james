@@ -185,6 +185,17 @@ def execute(directory):
             effects=db.execute('SELECT COUNT(*) FROM effect').fetchone()[0]
         check(effects==20 and result['verified_states'].get('DONE')==20,
               'exactly 20 independently stored provider effects and 20 terminal states')
+        rids=f"SELECT rid FROM {SCHEMA}.p9_requests WHERE idem_key LIKE '{RUN}-%'"
+        durable=int(sql(f"SELECT count(*) FROM {SCHEMA}.p9_requests WHERE idem_key LIKE '{RUN}-%'"))
+        dispatches=int(sql(f'SELECT count(*) FROM {SCHEMA}.p9_dispatch WHERE rid IN ({rids})'))
+        settlements=int(sql(f'SELECT count(*) FROM {SCHEMA}.p9_settlement WHERE rid IN ({rids})'))
+        signed=int(sql(f'SELECT count(*) FROM {SCHEMA}.p20_signed_attestation '
+                       f'WHERE did IN (SELECT did FROM {SCHEMA}.p9_dispatch WHERE rid IN ({rids}))'))
+        check(durable==20 and dispatches==20 and settlements==20 and signed==20,
+              '20 durable requests, external dispatches, settlements and signed attestations corroborate provider effects')
+        RESULT['business_effects']=effects
+        RESULT['durable_requests']=durable
+        RESULT['signed_attestations']=signed
         RESULT['measurement']={k:result[k] for k in ('global_throughput_qps','gateway_witness',
                                       'host_evidence','global_recorded_posts','verified_states')}
         RESULT['completed']=True

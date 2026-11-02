@@ -41,6 +41,7 @@ class MergeTests(unittest.TestCase):
         self.assertEqual(report['http_statuses'],{'202':4,'409':8})
         self.assertEqual(report['global_recorded_posts'],12)
         self.assertIsNone(report['global_throughput_qps'])
+        self.assertEqual(len(report['workload_sha256']),64)
     def server_snapshot(self):
         return dict(schema_version=1,instance_id='test-jvm-one',run_id='testm7',
             server_elapsed_ns=6_000_000_000,first_start_elapsed_ns=2_000_000_000,

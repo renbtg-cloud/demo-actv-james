@@ -54,7 +54,9 @@ class WitnessState:
         self.statuses = Counter()
         self.by_backend = [Counter() for _ in backends]
         self.transport_errors = 0
+        self.client_delivery_failures = 0
         self.local_rejections = 0
+        self.backend_latency_buckets = Counter()
 
     def choose(self):
         with self.lock:
@@ -72,8 +74,16 @@ class WitnessState:
                 self.first_forward_ns = start
         return start
 
-    def end(self, backend_index, status, transport_error):
-        end = time.monotonic_ns()
+    @staticmethod
+    def bucket(elapsed_ns):
+        ms = max(0, elapsed_ns) / 1_000_000
+        for limit in (1, 5, 10, 25, 50, 100, 250, 500, 1000, 5000, 20000):
+            if ms < limit:
+                return f'lt_{limit}ms'
+        return 'ge_20000ms'
+
+    def end(self, backend_index, status, transport_error, start_ns, upstream_end_ns=None, delivery_failed=False):
+        end = upstream_end_ns if upstream_end_ns is not None else time.monotonic_ns()
         with self.lock:
             self.finished += 1
             self.inflight -= 1
@@ -81,6 +91,12 @@ class WitnessState:
             self.statuses[str(status)] += 1
             self.by_backend[backend_index][str(status)] += 1
             self.transport_errors += int(transport_error)
+            self.client_delivery_failures += int(delivery_failed)
+            self.backend_latency_buckets[self.bucket(end-start_ns)] += 1
+
+    def delivery_failed(self):
+        with self.lock:
+            self.client_delivery_failures += 1
 
     def rejected(self):
         with self.lock:
@@ -97,7 +113,9 @@ class WitnessState:
                 'first_forward_ns': self.first_forward_ns, 'last_reply_ns': self.last_reply_ns,
                 'statuses': dict(self.statuses), 'transport_errors': self.transport_errors,
                 'local_rejections': self.local_rejections,
-                'measurement_note': 'Single gateway monotonic window; captures returned HTTP responses, including transport-generated 502; NOT provider completions, hardware isolation, or unproxied service capacity.'}
+                'client_delivery_failures': self.client_delivery_failures,
+                'backend_latency_buckets': dict(self.backend_latency_buckets),
+                'measurement_note': 'Monotonic window ends when upstream responses have been read, before downstream delivery completes. Captures gateway-to-backend round trips and delivery failures; NOT confirmed client receipt, provider completions, hardware isolation, or unproxied service capacity.'}
 
 
 class WitnessServer(ThreadingHTTPServer):
@@ -120,16 +138,18 @@ class WitnessHandler(BaseHTTPRequestHandler):
         pass
 
     def respond(self, code, body=b'', content_type='application/json'):
-        self.send_response(code)
-        self.send_header('Content-Length', str(len(body)))
-        self.send_header('Content-Type', content_type)
-        self.send_header('Connection', 'close')
-        self.end_headers()
         try:
+            self.send_response(code)
+            self.send_header('Content-Length', str(len(body)))
+            self.send_header('Content-Type', content_type)
+            self.send_header('Connection', 'close')
+            self.end_headers()
             self.wfile.write(body)
-        except (BrokenPipeError, ConnectionResetError):
-            pass
-        self.close_connection = True
+            return True
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            return False
+        finally:
+            self.close_connection = True
 
     def do_GET(self):
         if self.path == '/__witness/health':
@@ -170,13 +190,14 @@ class WitnessHandler(BaseHTTPRequestHandler):
             return self.respond(503, b'{"error":"WITNESS_OVERLOADED"}')
         index, backend = state.choose()
         started = False
+        started_ns = None
         status = 502
         failed = False
         answer = b'{"error":"WITNESS_UPSTREAM_UNAVAILABLE"}'
         reply_type = 'application/json'
         try:
             if measured:
-                state.begin()
+                started_ns = state.begin()
                 started = True
             headers = {'Accept': 'application/json'}
             # No credentials or client-supplied forwarding headers in evidence.
@@ -204,10 +225,17 @@ class WitnessHandler(BaseHTTPRequestHandler):
             answer = b'{"error":"WITNESS_UPSTREAM_UNAVAILABLE"}'
             reply_type = 'application/json'
         finally:
+            # This marks the end of the UPSTREAM response, not the downstream
+            # client delivery. It is held until delivery completes so a snapshot
+            # cannot be falsely quiescent while a client response is still blocked.
+            upstream_end_ns = time.monotonic_ns()
+        try:
+            delivered = self.respond(status, answer, reply_type)
+        finally:
             if started:
-                state.end(index, status, failed)
+                state.end(index, status, failed, started_ns, upstream_end_ns,
+                          delivery_failed=not locals().get('delivered', False))
             state.guard.release()
-        self.respond(status, answer, reply_type)
 
 
 def main(argv=None):
