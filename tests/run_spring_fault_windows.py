@@ -138,7 +138,7 @@ def boot_env(schema, queue, srv_port, provider_port):
         'P20_PUBLIC_KEY_PEM': str(ROOT/'fixtures/keys/provider-test-public.pem'),
         'P20_EXPECTED_ISSUER': 'deroyque-lab-provider', 'P20_EXPECTED_KID': 'lab-key-01',
         'APP_READ_TOKEN': TOKEN_READ, 'APP_WRITE_TOKEN': TOKEN_WRITE,
-        'APP_LAB_METRICS_ENABLED': '0', 'APP_API_ENABLED': '1',
+        'APP_LAB_METRICS_ENABLED': '0', 'APP_AUTH_MODE': 'lab', 'APP_API_ENABLED': '1',
     }
 
 

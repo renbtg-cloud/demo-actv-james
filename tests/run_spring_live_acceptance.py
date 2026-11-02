@@ -297,7 +297,7 @@ def run():
       'P16_PROVIDER_RETENTION_MS':'300000','P20_SIGNED_LOOKUP_REQUIRED':'1',
       'P20_PUBLIC_KEY_PEM':str(ROOT/'fixtures/keys/provider-test-public.pem'),
       'P20_EXPECTED_ISSUER':'deroyque-lab-provider','P20_EXPECTED_KID':'lab-key-01',
-      'APP_API_ENABLED':'1','APP_LAB_METRICS_ENABLED':'0',
+      'APP_AUTH_MODE':'lab','APP_API_ENABLED':'1','APP_LAB_METRICS_ENABLED':'0',
       'APP_LAB_DIAGNOSTICS_ENABLED':'1','APP_ADMISSION_MAX_IN_FLIGHT':'32','APP_ADMISSION_WAIT_MS':'8000','APP_READ_TOKEN':READ,'APP_WRITE_TOKEN':WRITE,
     }
     provider_env={

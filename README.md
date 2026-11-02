@@ -4,7 +4,7 @@
 
 This repository contains the **actual experimental source code**, not the older documentation-only preview. The three primary deliverables are the asynchronous activation service, an independent HTTP provider simulator, and a configurable multi-JVM incoming-transaction simulator. They are developed as one evolving system.
 
-**Status (2 November 2026):** the Java 21 JDBC/RabbitMQ engine and the legacy JDK HTTP adapter have been exercised with real PostgreSQL, RabbitMQ and an independent SQLite-backed mock provider. The real Spring Boot 4.1.2 service, Flyway V1/V2 and five adversarial CI scenarios were verified in GitHub Actions in Milestone 16. Milestone 17 adds a stronger same-row claim-contention experiment; see its versioned notes for verification status.
+**Status (2 November 2026):** the real Spring Boot 4.1.2 and Flyway V1/V2 passed six adversarial GitHub Actions jobs (including four JVMs genuinely contending for the same DB row). Milestone 18 adds explicit JWT resource-server security to replace laboratory bearer tokens in the default deployment mode; see `docs/MILESTONE-18.md` and the CI test results.
 
 ## Layout
 
@@ -39,6 +39,12 @@ python3 -m unittest discover -s simulator/tests -v
 ```
 
 The simulator supports CLI and YAML workload profiles, load generators in independent JVMs, deterministic sharding across hosts, saturating step tests and thread/JFR diagnostics. The optional **intra-service admission instrumentation is disabled by default** (`APP_LAB_METRICS_ENABLED=1` to opt in). All throughput figures obtained on a shared Linux are experimental; they do not establish standalone service capacity.
+
+## Spring Security OAuth2/JWT authentication
+
+The Spring Boot adapter now defaults to **JWT resource-server mode** (`APP_AUTH_MODE=jwt`). It will **fail startup without** `APP_JWT_ISSUER`, `APP_JWT_JWKS_URI` and `APP_JWT_AUDIENCE`. Tokens require a verifiable RS256 signature, matching issuer/audience, valid time claims, and the `activation:read` or `activation:write` scope for the matching endpoint. No token minting or OAuth2 authorization server is bundled: use a trusted external identity provider and a configured HTTPS JWKS endpoint. Anonymous liveness/readiness are permitted; the laboratory ingress-metrics API is denied in JWT mode.
+
+The old opaque bearer-token behavior is retained **only** when `APP_AUTH_MODE=lab` is explicitly selected. This is for local experiments and existing regression harnesses, not for deployment. JWKS over HTTP is rejected unless `APP_JWT_ALLOW_HTTP_LOOPBACK=1` and the URI targets loopback; this override is for the CI's temporary key server only.
 
 ## Security, guarantees and limitations
 

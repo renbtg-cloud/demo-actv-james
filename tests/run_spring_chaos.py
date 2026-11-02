@@ -75,7 +75,7 @@ def boot_env(schema,queue,server_port,provider_port):
       'P16_PROVIDER_RETENTION_MS':'300000','P20_SIGNED_LOOKUP_REQUIRED':'1',
       'P20_PUBLIC_KEY_PEM':str(ROOT/'fixtures/keys/provider-test-public.pem'),
       'P20_EXPECTED_ISSUER':'deroyque-lab-provider','P20_EXPECTED_KID':'lab-key-01',
-      'APP_READ_TOKEN':TOKEN_READ,'APP_WRITE_TOKEN':TOKEN_WRITE,'APP_API_ENABLED':'1','APP_LAB_METRICS_ENABLED':'0'
+      'APP_READ_TOKEN':TOKEN_READ,'APP_WRITE_TOKEN':TOKEN_WRITE,'APP_AUTH_MODE':'lab','APP_API_ENABLED':'1','APP_LAB_METRICS_ENABLED':'0'
     }
 
 def provider(role,portnum,override='NONE'):

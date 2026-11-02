@@ -159,7 +159,7 @@ def run():
    'P16_PROVIDER_RETENTION_MS':'300000','P20_SIGNED_LOOKUP_REQUIRED':'1',
    'P20_PUBLIC_KEY_PEM':str(ROOT/'fixtures/keys/provider-test-public.pem'),
    'P20_EXPECTED_ISSUER':'deroyque-lab-provider','P20_EXPECTED_KID':'lab-key-01',
-   'APP_READ_TOKEN':READ,'APP_WRITE_TOKEN':WRITE,'APP_API_ENABLED':'1','APP_LAB_METRICS_ENABLED':'0',
+   'APP_READ_TOKEN':READ,'APP_WRITE_TOKEN':WRITE,'APP_AUTH_MODE':'lab','APP_API_ENABLED':'1','APP_LAB_METRICS_ENABLED':'0',
    'P21_TRACE_CLAIM_RACE':'1'}
   spring=launch(f'spring-{i}',['java','-Xmx320m','-jar',str(args.boot_jar)],env)
   check(bool(eventually(lambda port=port,spring=spring:spring.poll() is None and

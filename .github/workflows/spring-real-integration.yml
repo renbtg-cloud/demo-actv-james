@@ -12,6 +12,7 @@ on:
       - 'tests/run_spring_fault_windows.py'
       - 'tests/run_spring_chaos.py'
       - 'tests/run_spring_same_row_race.py'
+      - 'tests/run_spring_jwt_security.py'
       - 'simulator/**'
       - 'provider/**'
       - 'scripts/test-spring-real.sh'
@@ -27,6 +28,7 @@ on:
       - 'tests/run_spring_fault_windows.py'
       - 'tests/run_spring_chaos.py'
       - 'tests/run_spring_same_row_race.py'
+      - 'tests/run_spring_jwt_security.py'
       - 'simulator/**'
       - 'provider/**'
       - 'scripts/test-spring-real.sh'
@@ -38,7 +40,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [staggered-crashes, exact-fault-windows, competing-windows, dependency-interruptions, late-and-contradiction, same-row-contention]
+        scenario: [staggered-crashes, exact-fault-windows, competing-windows, dependency-interruptions, late-and-contradiction, same-row-contention, jwt-security]
     services:
       postgres:
         image: postgres:17
@@ -90,7 +92,11 @@ jobs:
           P13_RABBIT_USER: deroyque_ci
           P13_RABBIT_PASSWORD: lab-ci-only-rabbit-password
         run: |
-          if [[ "${{ matrix.scenario }}" == "staggered-crashes" ]]; then
+          if [[ "${{ matrix.scenario }}" == "jwt-security" ]]; then
+            mvn -B -ntp -f adapter-springboot/pom.xml clean package
+            python3 -u tests/run_spring_jwt_security.py --boot-jar adapter-springboot/target/deroyque-springboot-0.10.0-SNAPSHOT.jar --output "$RUNNER_TEMP/spring-jwt-security.json"
+            cat "$RUNNER_TEMP/spring-jwt-security.json"
+          elif [[ "${{ matrix.scenario }}" == "staggered-crashes" ]]; then
             ./scripts/test-spring-real.sh --adversarial-max-jvms 24 --adversarial-service-jvms 4 --adversarial-crashes 2 --output "$RUNNER_TEMP/spring-real-result.json"
             cat "$RUNNER_TEMP/spring-real-result.json"
           elif [[ "${{ matrix.scenario }}" == "exact-fault-windows" ]]; then

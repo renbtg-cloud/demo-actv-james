@@ -5,6 +5,7 @@ import java.security.MessageDigest;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Semaphore;
+import java.util.function.BiPredicate;
 import java.util.concurrent.TimeUnit;
 
 /** Framework-neutral admission/status mapping for the Spring MVC entrypoint.
@@ -14,7 +15,7 @@ import java.util.concurrent.TimeUnit;
 public final class AdmissionHttpFacade {
   public record Reply(int status, String json, String location) {}
   private final RequestOperations requests;
-  private final byte[] readToken, writeToken;
+  private final BiPredicate<String, Boolean> access;
   private final IngressMeasurements metrics;
   /** Bounded admission: this JVM cannot create unbounded simultaneous JDBC connections
    * from HTTP requests. Unlike monitoring, admission backpressure is part of normal safety.
@@ -38,19 +39,30 @@ public final class AdmissionHttpFacade {
       System.err.println("DEROYQUE_ADMISSION_SQLSTATE "+code);
   }
   public AdmissionHttpFacade(RequestOperations requests,String read,String write,boolean metricsEnabled){
+    this(requests,labAccess(read,write),metricsEnabled);
+  }
+  private static BiPredicate<String,Boolean> labAccess(String read,String write){
     if(read==null||write==null||read.length()<24||write.length()<24||read.equals(write))
       throw new IllegalArgumentException("APP_READ_TOKEN and APP_WRITE_TOKEN must be distinct and >=24 chars");
-    this.requests=requests;
-    this.readToken=read.getBytes(StandardCharsets.UTF_8);
-    this.writeToken=write.getBytes(StandardCharsets.UTF_8);
+    byte[] readBytes=read.getBytes(StandardCharsets.UTF_8),writeBytes=write.getBytes(StandardCharsets.UTF_8);
+    return (authorization,writing)->{
+      byte[] candidate=(authorization!=null&&authorization.startsWith("Bearer ")?authorization.substring(7):"").getBytes(StandardCharsets.UTF_8);
+      return MessageDigest.isEqual(writing?writeBytes:readBytes,candidate);
+    };
+  }
+  /** Authentication is injected by the framework boundary. The neutral core never
+   * parses JWTs or trusts unverified claims. This constructor is for a verified
+   * authorization policy, NOT a replacement for the Spring Security filter chain.
+   */
+  public AdmissionHttpFacade(RequestOperations requests,BiPredicate<String,Boolean> verifiedAccess,boolean metricsEnabled){
+    this.requests=java.util.Objects.requireNonNull(requests);
+    this.access=java.util.Objects.requireNonNull(verifiedAccess);
     this.metrics=metricsEnabled?new IngressMeasurements():null;
     this.admissionSlots=new Semaphore(configInt("APP_ADMISSION_MAX_IN_FLIGHT",32,1,256),true);
     this.admissionWaitMs=configInt("APP_ADMISSION_WAIT_MS",8000,1,30000);
   }
-  private boolean allowed(String auth,boolean writing){
-    byte[] candidate=(auth!=null&&auth.startsWith("Bearer ")?auth.substring(7):"").getBytes(StandardCharsets.UTF_8);
-    return MessageDigest.isEqual(writing?writeToken:readToken,candidate);
-  }
+  private boolean allowed(String auth,boolean writing){return access.test(auth,writing);}
+
   private static Reply err(int status,String message){return new Reply(status,"{\"error\":"+StrictJson.quote(message)+"}",null);}
   static boolean valid(String s,int max){return s!=null&&!s.isBlank()&&s.length()<=max&&s.chars().noneMatch(c->c<32||c==127);}
   public Reply create(String authorization,String contentType,byte[] body,String run){
