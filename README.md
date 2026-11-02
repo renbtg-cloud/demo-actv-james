@@ -44,11 +44,57 @@ python3 -m unittest discover -s simulator/tests -v
 
 The simulator supports CLI and YAML workload profiles, load generators in independent JVMs, deterministic sharding across hosts, saturating step tests and thread/JFR diagnostics. The optional **intra-service admission instrumentation is disabled by default** (`APP_LAB_METRICS_ENABLED=1` to opt in). All throughput figures obtained on a shared Linux are experimental; they do not establish standalone service capacity.
 
+## Optional ready-to-use local Keycloak (Milestone 20)
+
+**No existing Keycloak server is required** to try the OAuth2/OIDC integration. Docker is
+needed only if you opt in. On the same machine where Deroyque is running:
+
+```bash
+python3 scripts/local_keycloak.py up
+# On the same shell where the Spring Boot app will be launched:
+eval "$(python3 scripts/local_keycloak.py env --provider local)"
+# Start Deroyque with a working PostgreSQL/RabbitMQ and its normal JDBC/provider settings:
+mvn -B -ntp -f adapter-springboot/pom.xml package
+java -jar adapter-springboot/target/deroyque-springboot-0.10.0-SNAPSHOT.jar
+```
+
+The local issuer defaults to `http://127.0.0.1:18090/realms/deroyque-local`. The
+application remains in **JWT mode**; `APP_JWT_ALLOW_HTTP_LOOPBACK=1` permits only
+this **local** HTTP development provider. The realm has independent `reader`,
+`writer` and `outsider` service-account clients, with actual Keycloak-generated
+JWTs and real `activation:read` / `activation:write` scopes. Retrieve a short-lived
+writer token to test a request without copying the client's secret:
+
+```bash
+TOKEN="$(python3 scripts/local_keycloak.py token --client writer)"
+# Handle TOKEN as a credential: do not echo it or commit it.
+python3 scripts/local_keycloak.py status
+python3 scripts/local_keycloak.py down
+unset TOKEN
+```
+
+To use your **own** OIDC-compatible identity provider instead, do not start local
+Keycloak; configure the issuer/JWKS and audience explicitly (HTTPS is required):
+
+```bash
+eval "$(python3 scripts/local_keycloak.py env --provider external \
+  --issuer 'https://idp.example/realms/your-realm' \
+  --jwks-uri 'https://idp.example/realms/your-realm/protocol/openid-connect/certs' \
+  --audience 'deroyque-activation-api')"
+```
+
+Both paths use the exact same Spring Security resource-server validation. The
+local process and its disposable demonstration realm are **opt-in, off by default,
+loopback-only, non-production**. Client credentials and realm files are generated
+randomly under gitignored `.local/keycloak`, not committed. `down` removes the
+container and temporary secrets. See `docs/MILESTONE-20.md` for limitations,
+troubleshooting, and CI evidence.
+
 ## Spring Security OAuth2/JWT authentication
 
-The Spring Boot adapter now defaults to **JWT resource-server mode** (`APP_AUTH_MODE=jwt`). It will **fail startup without** `APP_JWT_ISSUER`, `APP_JWT_JWKS_URI` and `APP_JWT_AUDIENCE`. Tokens require a verifiable RS256 signature, matching issuer/audience, valid time claims, and the `activation:read` or `activation:write` scope for the matching endpoint. No token minting or OAuth2 authorization server is bundled: use a trusted external identity provider and a configured HTTPS JWKS endpoint. Anonymous liveness/readiness are permitted; the laboratory ingress-metrics API is denied in JWT mode.
+The Spring Boot adapter now defaults to **JWT resource-server mode** (`APP_AUTH_MODE=jwt`). It will **fail startup without** `APP_JWT_ISSUER`, `APP_JWT_JWKS_URI` and `APP_JWT_AUDIENCE`. Tokens require a verifiable RS256 signature, matching issuer/audience, valid time claims, and the `activation:read` or `activation:write` scope for the matching endpoint. The application is only a resource server: use your trusted external identity provider or opt into the separate disposable local Keycloak described above. The main service never mints JWTs. Anonymous liveness/readiness are permitted; the laboratory ingress-metrics API is denied in JWT mode.
 
-The old opaque bearer-token behavior is retained **only** when `APP_AUTH_MODE=lab` is explicitly selected. This is for local experiments and existing regression harnesses, not for deployment. JWKS over HTTP is rejected unless `APP_JWT_ALLOW_HTTP_LOOPBACK=1` and the URI targets loopback; this override is for the CI's temporary key server only.
+The old opaque bearer-token behavior is retained **only** when `APP_AUTH_MODE=lab` is explicitly selected. This is for local experiments and existing regression harnesses, not for deployment. JWKS over HTTP is rejected unless `APP_JWT_ALLOW_HTTP_LOOPBACK=1` and the URI targets loopback; this override is for explicitly enabled local development (including CI), never a remote HTTP identity provider.
 
 ## Security, guarantees and limitations
 

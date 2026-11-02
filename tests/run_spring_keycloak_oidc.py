@@ -30,13 +30,15 @@ P = argparse.ArgumentParser(description=__doc__)
 P.add_argument('--boot-jar', type=pathlib.Path, required=True)
 P.add_argument('--output', type=pathlib.Path)
 P.add_argument('--keycloak-image', default='quay.io/keycloak/keycloak:26.8.1')
+P.add_argument('--use-local-keycloak', action='store_true',
+               help='Exercise the first-class scripts/local_keycloak.py option rather than test-internal Docker')
 args = P.parse_args()
 
 TAG = uuid.uuid4().hex[:10]
 SCHEMA = 'oidc_' + TAG
 QUEUE = 'oidc.' + TAG
-REALM = 'deroyque-ci-' + TAG
-OTHER_REALM = 'deroyque-untrusted-' + TAG
+REALM = 'deroyque-local' if args.use_local_keycloak else 'deroyque-ci-' + TAG
+OTHER_REALM = 'deroyque-local-untrusted' if args.use_local_keycloak else 'deroyque-untrusted-' + TAG
 AUDIENCE = 'deroyque-activation-api'
 EXTERNAL_ID = 'oidc-' + TAG + '-activation'
 DBHOST = os.getenv('DEROYQUE_PG_HOST', '127.0.0.1')
@@ -204,10 +206,20 @@ def run():
     global APPPORT
     jar = args.boot_jar.resolve()
     check(jar.is_file(), 'real Spring Boot executable archive exists')
-    import_dir, creds = realm_import()
     idp_port = freeport()
     base = f'http://127.0.0.1:{idp_port}'
-    start_keycloak(idp_port, import_dir)
+    if args.use_local_keycloak:
+        local_state = DIR / 'local-keycloak'
+        proc = subprocess.run([sys.executable, str(ROOT/'scripts/local_keycloak.py'),
+                 '--state-dir', str(local_state), 'up', '--port', str(idp_port),
+                 '--image', args.keycloak_image, '--with-test-realm'],
+                 capture_output=True, text=True, timeout=210)
+        if proc.returncode:
+            raise RuntimeError('First-class local Keycloak startup failed; private details suppressed')
+        creds = json.loads((local_state/'credentials.json').read_text())['clients']
+    else:
+        import_dir, creds = realm_import()
+        start_keycloak(idp_port, import_dir)
     discovery_path = '/realms/' + REALM + '/.well-known/openid-configuration'
     def discovery():
         code, body, _ = request('GET', base + discovery_path, timeout=3)
@@ -313,7 +325,8 @@ def run():
     check(sql('SELECT count(*) FROM ' + SCHEMA + '.p20_signed_attestation') == '1',
           'provider signed evidence is durably stored in PostgreSQL')
     RESULT['signed_provider_effect_verified'] = True
-    print('KEYCLOAK_OIDC_PASS actual_external_provider=Keycloak client_credentials=true external_effects=1',flush=True)
+    print('KEYCLOAK_OIDC_PASS provider='+('local-option' if args.use_local_keycloak else 'test-internal')+
+          ' client_credentials=true external_effects=1',flush=True)
     return 0
 
 
@@ -337,7 +350,11 @@ def main():
                     proc.wait()
             file.close()
         try:
-            subprocess.run(['docker','rm','-f',CONTAINER],capture_output=True,timeout=35)
+            if args.use_local_keycloak:
+                subprocess.run([sys.executable, str(ROOT/'scripts/local_keycloak.py'),
+                   '--state-dir', str(DIR/'local-keycloak'), 'down'],capture_output=True,timeout=45)
+            else:
+                subprocess.run(['docker','rm','-f',CONTAINER],capture_output=True,timeout=35)
         except (OSError,subprocess.TimeoutExpired):
             print('KEYCLOAK_OIDC_CLEANUP could not confirm docker removal',flush=True)
         failures=sum(not x['passed'] for x in RESULT['checks'])
