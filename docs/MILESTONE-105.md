@@ -1,0 +1,3 @@
+# Milestone 105 — Fault-injected snapshot and post-import CI contracts
+
+The laboratory adds explicit regression tests for malicious source types, insufficient byte budgets, archive replacement between preflight and intake, a simulated prepublication sync failure, rejected extra files, tampered collected agent evidence, forged collection verdict metadata, and repeated or missing original ZIPs. A distinct GitHub Actions job exercises the newly added unit tests on Linux with actual Ed25519 keys and independent filesystem reads. A successful workflow proves these bounded scenarios on the hosted CI kernel; it does not certify cross-host isolation, remote storage durability or application performance.

@@ -277,6 +277,22 @@ jobs:
           python3 scripts/package_source.py --verify-reproducible \
             --root . --output "$RUNNER_TEMP/published-source/deroyque-git-source.zip"
 
+  offline-collection-hardening-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify bounded intake snapshots and independently reverified imports
+        run: |
+          python3 -m pip install 'cryptography>=42,<50'
+          python3 -m unittest discover -s simulator/tests -p 'test_shard_snapshot.py' -v
+          python3 -m unittest discover -s simulator/tests -p 'test_verify_collection.py' -v
+
   secure-shard-transfer-contracts:
     runs-on: ubuntu-latest
     timeout-minutes: 10

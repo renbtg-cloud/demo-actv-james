@@ -1,0 +1,5 @@
+# Milestone 104 — Independent re-verification of published collection
+
+`python3 simulator/verify_collection.py --collection PATH --pins pins.json --session session.json --manifest manifest.json` reopens the **published** directory, requires exact top-level/shard member coverage, revalidates the trusted launch plan and collector challenge, checks Ed25519 signatures against every stored summary/agent/optional clock report, and independently recomputes host-provenance classification. Unexpected members, tampered rows, contradictory report fields or incomplete signatures are rejected.
+
+Optionally pass `--original-bundles ZIP1 ZIP2 ...` to verify original transported ZIPs against the persisted SHA-256/size inventory. Without this argument, the verifier explicitly returns `original_bundles_checked=false`: it cannot reconstruct deleted original ZIP bytes from the extracted files. Collection report metadata itself is not signed; the authenticated source remains the pinned Ed25519 envelopes and an optional separately signed collector verdict.

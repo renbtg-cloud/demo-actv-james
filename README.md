@@ -231,6 +231,19 @@ published. All accepted reports carry an explicit host-provenance category.
 Distinct self-reported fingerprints remain **unverified**, never a claim of
 physical host independence. See `docs/MILESTONE-99.md`.
 
+## Milestones 100–105 — Hostile transport intake and independently reverified publication
+
+The Linux offline collector now enforces aggregate archive-byte budgets, snapshots
+untrusted ZIP files through pinned file descriptors before extraction, records
+source SHA-256 and lengths from those immutable snapshots, and flushes staged
+evidence before non-replacing atomic publication. The separate
+`simulator/verify_collection.py` tool revalidates the published directory against
+collector-held trusted signing keys, session and launch manifest; original input
+ZIPs can optionally be checked against its transport inventory. Adversarial
+snapshot/reverification tests run in a dedicated CI job. These are bounded
+software-integrity tests, **not real multi-host execution or hardware attestation**.
+See `docs/MILESTONE-100.md` through `docs/MILESTONE-105.md`.
+
 ## Layout
 
 - `core/`: admission and evidence contracts, policy and safe parsing.
