@@ -45,7 +45,10 @@ def run():
             check(one.get('completed') is True and one.get('business_effects')==20 and
                   one.get('durable_requests')==20 and one.get('signed_attestations')==20 and
                   one.get('identity_graph_verified') is True and one.get('provider_per_key_verified') is True and
-                  one.get('independent_ed25519_verified') is True,
+                  one.get('independent_ed25519_verified') is True and
+                  one.get('terminal_signed_lineage_verified') is True and
+                  one.get('uncontaminated_schema_verified') is True and
+                  one.get('provider_index_and_time_verified') is True,
                   f'trial {index+1}/3 independently reconciled signed and remote effects')
             sample=json.loads(merged.read_text())
             samples.append(sample);identities.append(sample.get('run_id'))

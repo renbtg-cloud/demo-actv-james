@@ -29,6 +29,9 @@ from distributed_merge import merge
 from server_metrics import fetch
 from gateway_identity_audit import postgres_identity_query, audit_postgres_rows, audit_sqlite_effects
 from gateway_signature_audit import signed_tokens_query, audit_signed_rows
+from gateway_lineage_audit import (
+    postgres_lineage_query, audit_lineage_rows, schema_cardinality_query,
+    audit_schema_cardinality, audit_sqlite_index_and_proof_times)
 
 P = argparse.ArgumentParser(description=__doc__)
 P.add_argument('--boot-jar', type=Path, required=True)
@@ -210,11 +213,25 @@ def execute(directory):
               'each PostgreSQL identity has exactly one generation-one ACTIVATED provider effect')
         RESULT['identity_graph_verified']=True
         RESULT['provider_per_key_verified']=True
-        verified_tokens=audit_signed_rows(sql(signed_tokens_query(SCHEMA,RUN)),RUN,W['keys'],
+        signed_records=sql(signed_tokens_query(SCHEMA,RUN))
+        verified_tokens=audit_signed_rows(signed_records,RUN,W['keys'],
                                         ROOT/'fixtures/keys/provider-test-public.pem')
         check(verified_tokens['independently_verified_ed25519']==W['keys'],
               f"{W['keys']} stored provider signatures independently verified in Python by exact key")
         RESULT['independent_ed25519_verified']=True
+        lineage=audit_lineage_rows(sql(postgres_lineage_query(SCHEMA,RUN)),RUN,W['keys'])
+        check(lineage['verified_terminal_lineages']==W['keys'],
+              'terminal stage, settlement and signed observation link agree for every identity')
+        RESULT['terminal_signed_lineage_verified']=True
+        clean=audit_schema_cardinality(sql(schema_cardinality_query(SCHEMA,RUN)),W['keys'])
+        check(clean['clean_schema_keys']==W['keys'],
+              'fresh PostgreSQL schema contains no unaccounted dispatch, settlement, proof or incident')
+        RESULT['uncontaminated_schema_verified']=True
+        times=audit_sqlite_index_and_proof_times(directory/'provider.sqlite3',
+                                                signed_records,RUN,W['keys'])
+        check(times['indexed_effect_proofs']==W['keys'],
+              'every independent SQLite idempotency index and signed timestamp binds to one effect')
+        RESULT['provider_index_and_time_verified']=True
         RESULT['business_effects']=effects
         RESULT['durable_requests']=durable
         RESULT['signed_attestations']=signed

@@ -73,6 +73,23 @@ establish authenticity, never truthfulness of a dishonest supplier.
 See `docs/MILESTONE-51.md` through `docs/MILESTONE-53.md`. Real CI acceptance is
 pending the new workflow run.
 
+## Milestones 54–60 — Full-chain, independently falsifiable provider evidence
+
+The actual two-Spring-JVM gateway experiments now check each identity's terminal
+PostgreSQL stage and `DONE` settlement, the attestation's *observation/dispatch*
+lineage, schema-wide absence of unaccounted dispatches/settlements/proofs in the
+fresh test schema, and the independent SQLite provider's idempotency index as
+well as its effect journal. Ed25519-verified timestamps are checked against the
+provider effect creation/expiration interval **only because this lab uses one
+host clock**. A negative-mutation suite and the fail-closed CI gate require
+these stronger proofs for short, sustained and repeated real experiments.
+
+These are **test-fixture-specific invariants**, not claims that production
+services never retry, reject a proof, or dispatch a request more than once.
+Never interpret signed evidence as proof that a dishonest external provider
+is truthful. See `docs/MILESTONE-54.md` through `docs/MILESTONE-60.md`.
+The results of a new CI run, not local tests alone, determine real acceptance.
+
 ## Layout
 
 - `core/`: admission and evidence contracts, policy and safe parsing.
