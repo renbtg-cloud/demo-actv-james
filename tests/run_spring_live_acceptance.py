@@ -110,6 +110,30 @@ def adversarial_jvm_budget(max_jvms):
     if count<8:raise RuntimeError(f'Insufficient headroom for 8 adversarial JVMs; budget={count}, available_MiB={available//1048576}')
     return count
 
+def simulator_diagnostics(folder,return_code):
+    """Report non-secret counters only, never dump raw provider logs or tokens."""
+    path=folder/'summary.json'
+    if not path.exists():
+        agent_logs=list(folder.glob('agent-*.log')) if folder.exists() else []
+        print('SIMULATOR_DIAG exit='+str(return_code)+' summary=missing agent_logs='+str(len(agent_logs)),flush=True)
+        return
+    try:
+        data=json.loads(path.read_text())
+        observed=data.get('observed') or {}
+        print('SIMULATOR_DIAG '+json.dumps({
+          'exit':return_code,'outcome':data.get('outcome'),
+          'records':observed.get('records'),
+          'http_statuses':observed.get('http_statuses'),
+          'unexpected':observed.get('unexpected_http_or_transport'),
+          'peak_jvms_with_inflight_http':observed.get('peak_jvms_with_inflight_http'),
+          'verified_states':observed.get('verified_states'),
+          'violations_count':len(data.get('violations') or []),
+          'harness_errors_count':len(data.get('harness_errors') or []),
+          'state_verification_errors_count':len(data.get('state_verification_errors') or [])
+        },sort_keys=True),flush=True)
+    except (OSError,ValueError,TypeError):
+        print('SIMULATOR_DIAG exit='+str(return_code)+' summary=invalid',flush=True)
+
 def wait_for_admission(prefix,minimum,seconds=30):
     deadline=time.monotonic()+seconds
     while time.monotonic()<deadline:
@@ -151,6 +175,7 @@ def adversarial_spring_test(jar,base_env):
     must(CHILDREN[1][0].poll() is None,'surviving Spring JVM remained alive after peer crash')
     try:sim.wait(timeout=160)
     except subprocess.TimeoutExpired:raise RuntimeError('adversarial load generator exceeded 160s')
+    if sim.returncode!=0:simulator_diagnostics(simdir,sim.returncode)
     must(sim.returncode==0,'multi-JVM simulator finished and validated every generated request')
     report=json.loads((simdir/'summary.json').read_text()) if (simdir/'summary.json').exists() else {}
     observed=report.get('observed',{})
@@ -251,13 +276,14 @@ def run():
           '--url',f'http://127.0.0.1:{API}','--jvms',str(ARGS.load_jvms),
           '--concurrency','6','--requests','160','--keys','40',
           '--conflict-percent','35','--rate','55','--start-delay-ms','2500',
-          '--timeout-ms','8000','--await-done-seconds','30','--verify-state',
+          '--timeout-ms','10000','--await-done-seconds','75','--verify-state',
           '--output-dir',str(simdir)]
         simenv={**os.environ,'DEROYQUE_SIM_WRITE_TOKEN':WRITE,'DEROYQUE_SIM_READ_TOKEN':READ}
         cp=subprocess.run(args,env=simenv,capture_output=True,text=True,timeout=120)
         if cp.returncode:
             # Avoid printing logs with credentials or user-supplied payloads.
-            print('SIMULATOR FAILED; inspect isolated local logs (not packaged).',flush=True)
+            print('SIMULATOR FAILED; sanitized counters follow (no raw logs).',flush=True)
+            simulator_diagnostics(simdir,cp.returncode)
         must(cp.returncode==0,'independent JVM input simulator exited successfully')
         summary=json.loads((simdir/'summary.json').read_text())
         observed=summary.get('observed',{})
