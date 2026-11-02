@@ -246,4 +246,5 @@ jobs:
           java-version: '21'
       - name: Verify independent simulator, multi-JVM and host evidence contracts
         run: |
+          python3 -m pip install 'PyYAML>=6.0,<7.0'
           python3 -m unittest discover -s simulator/tests -v
