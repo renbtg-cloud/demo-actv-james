@@ -278,6 +278,19 @@ matrix to reject their common kernel fingerprint, avoiding false physical-host
 claims. These preparations are not yet a real multi-host trial. See
 `docs/MILESTONE-114.md` and `docs/MILESTONE-115.md`.
 
+## Milestones 123–130 — Collector-bound signed preflight (opt-in)
+
+Real per-host Ed25519 signatures now bind the **exact readiness-report bytes** to
+a separately enrolled public key, assigned shard and the collector's fresh
+launch/session challenge. The matrix requires a complete proof set and retains
+ordered verified commitments in its immutable verdict. Dedicated CLI tools and
+hostile tests cover replay, substitution, wrong keys, duplicate hosts, unsafe
+files and no-downgrade behavior. This is *key authentication*, **not** physical
+host attestation or a real independent-host experiment. It does not replace
+post-run signed-shard and database/provider audits. See
+`docs/MILESTONE-123.md` through `docs/MILESTONE-130.md` and the signed preflight
+section of `docs/REAL-MULTIHOST-PROTOCOL.md`.
+
 ## Milestones 116–122 — Freshness-gated, fail-closed multi-host readiness
 
 The offline readiness matrix now offers `--strict-temporal`: a bounded collector-clock

@@ -231,6 +231,7 @@ jobs:
           python3 -m unittest discover -s simulator/tests -p 'test_host_signed_evidence.py' -v
           python3 -m unittest discover -s simulator/tests -p 'test_host_session*.py' -v
           python3 -m unittest discover -s simulator/tests -p 'test_collector_*.py' -v
+          python3 -m unittest discover -s simulator/tests -p 'test_host_readiness_signature.py' -v
 
   source-archive:
     runs-on: ubuntu-latest
@@ -295,6 +296,7 @@ jobs:
         run: |
           python3 -m unittest discover -s simulator/tests -p 'test_host_readiness.py' -v
           python3 -m unittest discover -s simulator/tests -p 'test_host_matrix.py' -v
+          python3 -m unittest discover -s simulator/tests -p 'test_host_matrix_hardening.py' -v
 
   offline-collection-hardening-contracts:
     runs-on: ubuntu-latest

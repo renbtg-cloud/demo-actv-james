@@ -36,7 +36,7 @@ def _reject_duplicate_keys(pairs):
     return result
 
 
-def _read_host_report(path):
+def _read_host_report_bytes(path):
     # Open a bounded, regular file without following its final symlink. The
     # collector must separately protect the parent directory and source custody.
     flags=os.O_RDONLY | getattr(os,'O_CLOEXEC',0) | getattr(os,'O_NOFOLLOW',0) | getattr(os,'O_NONBLOCK',0)
@@ -47,12 +47,19 @@ def _read_host_report(path):
             raise ValueError('Unsafe or oversized host readiness report')
         with os.fdopen(os.dup(fd),'rb') as source:
             raw=source.read(131073)
-        if len(raw)>131072 or len(raw)!=metadata.st_size:
+        after=os.fstat(fd)
+        if (len(raw)>131072 or len(raw)!=metadata.st_size or
+            (metadata.st_dev,metadata.st_ino,metadata.st_size,metadata.st_mtime_ns,metadata.st_ctime_ns)!=
+            (after.st_dev,after.st_ino,after.st_size,after.st_mtime_ns,after.st_ctime_ns)):
             raise ValueError('Host readiness report changed or exceeded size limit')
-        return json.loads(raw,object_pairs_hook=_reject_duplicate_keys,
-                          parse_constant=lambda _: (_ for _ in ()).throw(ValueError('Invalid JSON constant')))
+        return raw
     finally:
         os.close(fd)
+
+
+def _read_host_report(path):
+    return json.loads(_read_host_report_bytes(path),object_pairs_hook=_reject_duplicate_keys,
+                      parse_constant=lambda _: (_ for _ in ()).throw(ValueError('Invalid JSON constant')))
 
 
 def _check_temporal_evidence(manifest,indexed,*,now_ms,max_age_ms,max_future_ms):
@@ -111,7 +118,8 @@ def _publish_verdict(output,verdict):
 
 
 def audit(manifest, reports, *, require_network=False, strict_temporal=False,
-          now_ms=None, max_age_ms=300000, max_future_ms=10000):
+          now_ms=None, max_age_ms=300000, max_future_ms=10000,
+          signed_readiness_paths=None, session=None, pins=None):
     if isinstance(manifest,(str,pathlib.Path)):manifest=read_json(manifest,2*1024*1024)
     if not isinstance(manifest,dict) or manifest.get('schema_version')!=2:
         raise ValueError('Expected trusted launch manifest v2')
@@ -126,9 +134,20 @@ def audit(manifest, reports, *, require_network=False, strict_temporal=False,
             raise ValueError('Invalid readiness age budget')
         if type(max_future_ms) is not int or not 0<=max_future_ms<=60000:
             raise ValueError('Invalid readiness future skew budget')
+    signed=signed_readiness_paths is not None or session is not None or pins is not None
+    if signed and (signed_readiness_paths is None or session is None or pins is None):
+        raise ValueError('Signed readiness requires complete session, pins and envelopes')
     indexed={}
+    raw_by_shard={}
     for source in reports:
-        doc=_read_host_report(source) if isinstance(source,(str,pathlib.Path)) else source
+        if isinstance(source,(str,pathlib.Path)):
+            raw=_read_host_report_bytes(source)
+            doc=json.loads(raw,object_pairs_hook=_reject_duplicate_keys,
+                           parse_constant=lambda _: (_ for _ in ()).throw(ValueError('Invalid JSON constant')))
+        else:
+            if signed:raise ValueError('Signed readiness requires exact report files, not in-memory objects')
+            raw=None
+            doc=source
         if not isinstance(doc,dict) or set(doc)!=_REQUIRED or type(doc['schema_version']) is not int or doc['schema_version']!=2:
             raise ValueError('Malformed host readiness report')
         i=doc['shard_index']
@@ -159,6 +178,7 @@ def audit(manifest, reports, *, require_network=False, strict_temporal=False,
         if require_network and doc['network_evidence']=='NOT_PROBED':
             raise ValueError('Required TCP/TLS probe was not performed')
         indexed[i]=doc
+        if raw is not None:raw_by_shard[i]=raw
     if set(indexed)!=set(range(n)):
         raise ValueError('Missing host readiness shard')
     if strict_temporal:
@@ -170,9 +190,14 @@ def audit(manifest, reports, *, require_network=False, strict_temporal=False,
                                          for i in range(n)],manifest['run_id'])
     if host_provenance['status']!='DISTINCT_KERNEL_REPORTS_UNVERIFIED':
         raise ValueError('Independent host kernels not evidenced: '+host_provenance['status'])
+    signed_status=None
+    if signed:
+        from host_readiness_signature import verify_proofs
+        signed_status=verify_proofs(raw_by_shard,signed_readiness_paths,session,manifest,pins)
     return {'status':'APPARENT_READY_DISTINCT_KERNEL_REPORTS_UNVERIFIED',
             'run_id':manifest['run_id'],'shards':n,
             'manifest_sha256':digest(manifest),
+            'signed_readiness':signed_status if signed else {'status':'NOT_REQUESTED'},
             'report_commitments':[
                 {'shard_index':i,'canonical_sha256':digest(indexed[i])}
                 for i in range(n)],
@@ -192,12 +217,18 @@ def main(argv=None):
     p.add_argument('--max-age-ms',type=int,default=300000)
     p.add_argument('--max-future-ms',type=int,default=10000)
     p.add_argument('--output',type=pathlib.Path)
+    p.add_argument('--host-session',type=pathlib.Path)
+    p.add_argument('--host-pins',type=pathlib.Path)
+    p.add_argument('--signed-readiness',type=pathlib.Path,action='append')
     p.add_argument('reports',nargs='+',type=pathlib.Path)
     a=p.parse_args(argv)
     try:
         verdict=audit(a.manifest,a.reports,require_network=a.require_network,
                       strict_temporal=a.strict_temporal,max_age_ms=a.max_age_ms,
-                      max_future_ms=a.max_future_ms)
+                      max_future_ms=a.max_future_ms,
+                      signed_readiness_paths=a.signed_readiness,
+                      session=read_json(a.host_session) if a.host_session else None,
+                      pins=read_json(a.host_pins) if a.host_pins else None)
         if a.output is not None:
             _publish_verdict(a.output,verdict)
         print(json.dumps(verdict,sort_keys=True))

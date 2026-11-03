@@ -1,0 +1,3 @@
+# Milestone 129 — Live Ed25519 and adversarial CI coverage
+
+Added `simulator/tests/test_host_readiness_signature.py`, exercising real generated Ed25519 key pairs, two assigned host roles, CLI signing and CLI matrix verification, one-time output, byte and whitespace tampering, session replay, manifest changes, key swaps, duplicate/shuffled proofs, schema and signature corruption, symlinks/FIFOs and contradictory signed kernel fingerprints. The independent `collector-signing-contracts` CI job runs it with `cryptography`; unchanged unsigned CI keeps compatibility. A green CI result is required before asserting remotely validated behavior.

@@ -96,6 +96,57 @@ host may legitimately reject a plan if the barrier has fewer than 30 seconds
 remaining or local resources are insufficient. Correct the prerequisites and
 regenerate the plan/session instead of disabling validation.
 
+## 3a. Optional session-bound *signed readiness* (M123–M130)
+
+For a collector-challenged preflight, on **each actual producer host** install
+`cryptography>=42,<50` and sign the unmodified readiness JSON immediately
+after preflight. Use the *host's own private key*, previously enrolled at the
+collector; retain it locally with owner-only permissions:
+
+```sh
+python3 simulator/host_readiness_signature.py \
+  --report .local/evidence-run-001/host-000-readiness.json \
+  --private-key .local/host-private.pem --host-id host-0 \
+  --session .local/evidence-run-001/session.json \
+  --manifest .local/evidence-run-001/manifest.json \
+  --pins .local/pins.json \
+  --output .local/evidence-run-001/host-000-readiness-proof.json
+```
+
+Host 1 uses its own host ID `host-1`, key, report and distinct output file.
+Transfer each **report and detached signed envelope** using an authenticated
+operator-controlled channel. The signature commits to the exact report file
+bytes. Keep all private keys on their original producer hosts.
+
+At the **trusted collector**, use the collector-held manifest, pinned public
+keys and challenge session, **not copies supplied within untrusted uploads**.
+Run the matrix with every host proof, in any arrival order:
+
+```sh
+python3 simulator/host_matrix.py \
+  --manifest .local/evidence-run-001/manifest.json \
+  --host-pins .local/pins.json \
+  --host-session .local/evidence-run-001/session.json \
+  --signed-readiness .local/evidence-run-001/host-000-readiness-proof.json \
+  --signed-readiness .local/evidence-run-001/host-001-readiness-proof.json \
+  --strict-temporal --require-network \
+  --output .local/evidence-run-001/signed-readiness-matrix.json \
+  .local/evidence-run-001/host-000-readiness.json \
+  .local/evidence-run-001/host-001-readiness.json
+```
+
+`--strict-temporal` is **only for near-live preflight** (not later archival
+rechecks). `--require-network` is only appropriate if both producers actually
+completed an authorized network probe. A complete signed proof set is mandatory
+when signing is requested; there is no partial-signature fallback. The result
+reports only `ALL_PINNED_KEYS_VERIFIED_NOT_HOST_ATTESTATION`: even correct
+signatures cannot attest physical machine ownership, truthful CPU/kernel
+reports, synchronized clocks or end-to-end activation semantics.
+
+The unsigned compatibility workflow remains available below; its verdict says
+`NOT_REQUESTED` for signed readiness and must never be reported as signed.
+See `docs/MILESTONE-123.md` through `docs/MILESTONE-130.md`.
+
 Bring the two readiness reports back to the trusted collector. Check the
 self-reported kernel-fingerprint collision gate:
 
