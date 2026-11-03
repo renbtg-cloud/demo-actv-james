@@ -350,5 +350,6 @@ jobs:
         run: |
           python3 -m pip install 'PyYAML>=6.0,<7.0' 'cryptography>=42,<50'
           python3 -m unittest discover -s simulator/tests -p 'test_distributed_*.py' -v
+          python3 -m unittest discover -s simulator/tests -p 'test_distributed_prepare_boundary.py' -v
           python3 -m unittest discover -s simulator/tests -p 'test_clock_*.py' -v
           python3 -m unittest discover -s simulator/tests -v

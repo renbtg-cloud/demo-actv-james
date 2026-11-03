@@ -406,3 +406,32 @@ redirection, malformed URLs and default no-network behavior. CI gates the suite
 under `linux-host-readiness-contracts`. This remains a **single-host test**;
 it establishes neither independent-machine operation nor trusted physical
 attestation.
+
+## M155–M162 — Transactional generation of distributed launch plans
+
+The `simulator/distributed_prepare.py` generator now calls the very same
+`workload.validate_workload` used by the actual simulator, including profile
+constraints, unique-key invariants and bounded attempted POST counts. All
+numeric settings in the resulting plan must be finite, including settings for
+inactive profiles; malformed configurations never become a published plan.
+The generator shares `host_readiness._parse_preflight_target`, so URL security
+checks cannot silently diverge across generation and host preflight. Heap,
+concurrency and launch-barrier values also have explicit generator limits.
+
+After validating inputs, the generator writes into a private 0700 staging
+directory. Each host script is 0700; the manifest is 0600. Every file and
+the staged directory are fsynced before a Linux `renameat2`
+`RENAME_NOREPLACE` transaction publishes the **complete** plan as a directory.
+Existing paths, including symlinks, are never replaced. The shared helper
+`simulator/atomic_publish.py` has no cryptography or provider dependencies.
+Cleanup on caught failures does not replace a disaster recovery plan: a crash
+can leave a private `.deroyque-plan-*` staging directory that an operator
+should review and remove before reattempting, never treating it as published.
+The caller must keep the destination's parent directory under trusted custody;
+network filesystem semantics are not certified by these Linux-local tests.
+
+The dedicated boundary regression includes six *independent Python CLI
+processes* racing on a single target, tests exact bytes/modes of the published
+plan, refuses invalid float values and checks that errors never produce a
+partially published plan. No test here claims to exercise independent
+physical hosts or real external provider work.

@@ -278,6 +278,20 @@ matrix to reject their common kernel fingerprint, avoiding false physical-host
 claims. These preparations are not yet a real multi-host trial. See
 `docs/MILESTONE-114.md` and `docs/MILESTONE-115.md`.
 
+## Milestones 155–162 — Contract-aligned, atomic multi-host launch plans
+
+The independent multi-host launcher now validates workload arguments using the
+same deterministic profile rules as its real execution engine, rejects nonfinite
+inputs even in inactive settings, shares the strengthened preflight URL contract,
+and bounds per-JVM resources and launch time. Prepared launchers/manifest are
+written as a private complete staging directory and atomically published on
+Linux with `renameat2(RENAME_NOREPLACE)`, never replacing a prior plan. A
+standalone atomic publisher avoids importing cryptographic collector dependencies
+into the launcher. Adversarial tests race **six real CLI processes** and reject
+partial, symlinked, malformed and invalid-workload publication. These controls
+do **not** demonstrate independently hosted execution. See
+`docs/MILESTONE-155.md` through `docs/MILESTONE-162.md` and the operator protocol.
+
 ## Milestones 147–154 — Safer Linux producer-host preflight boundaries
 
 The preflight now snapshots launchers through bounded, nonblocking no-symlink

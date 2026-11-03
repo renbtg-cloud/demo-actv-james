@@ -7,8 +7,6 @@ physical hosts, nor a global workload success verdict. All validation occurs
 before an atomic Linux RENAME_NOREPLACE publishes the collection directory.
 """
 import argparse
-import ctypes
-import errno
 import hashlib
 import json
 import os
@@ -18,6 +16,7 @@ import shutil
 import sys
 import tempfile
 
+from atomic_publish import _publish_no_replace
 from distributed_integrity import verify_launch
 from host_provenance import evaluate_provenance
 from host_session import read_json, validate, digest
@@ -25,17 +24,6 @@ from host_signed_evidence import verify_envelopes
 from shard_bundle import inspect_archive, unpack, _MAX_ARCHIVE
 
 
-def _publish_no_replace(staged, destination):
-    libc=ctypes.CDLL(None,use_errno=True)
-    renameat2=getattr(libc,'renameat2',None)
-    if renameat2 is None:
-        raise ValueError('Linux renameat2 RENAME_NOREPLACE unavailable; refuse unsafe publication')
-    renameat2.argtypes=(ctypes.c_int,ctypes.c_char_p,ctypes.c_int,ctypes.c_char_p,ctypes.c_uint)
-    renameat2.restype=ctypes.c_int
-    result=renameat2(-100,os.fsencode(staged),-100,os.fsencode(destination),1)
-    if result != 0:
-        error=ctypes.get_errno()
-        raise OSError(error,os.strerror(error),str(destination))
 
 
 
