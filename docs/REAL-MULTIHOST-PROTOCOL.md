@@ -220,6 +220,53 @@ perform those checks as described in step 7. Signing and checking locally
 reported data cannot authenticate when a remote host really ran, or what its
 hardware, clock or administrative control actually was.
 
+### Optional independently pinned collector checkpoint (M139–M146)
+
+After the signed matrix has passed **and before** the launch barrier, an
+operator may pin a separate collector signing key. Prefer an evaluator-generated
+Ed25519 key, kept owner-only and distinct from every producer key. Obtain its
+public key over an authenticated, independent channel. The public key must NOT
+come from the untrusted readiness or receipt upload.
+
+```sh
+umask 077
+openssl genpkey -algorithm Ed25519 -out .local/collector-private.pem
+openssl pkey -in .local/collector-private.pem -pubout \
+  -out .local/collector-public.pem
+chmod 600 .local/collector-private.pem
+
+python3 simulator/readiness_checkpoint.py sign \
+  --matrix .local/evidence-run-001/signed-readiness-matrix.json \
+  --report .local/evidence-run-001/host-000-readiness.json \
+  --report .local/evidence-run-001/host-001-readiness.json \
+  --signed-readiness .local/evidence-run-001/host-000-readiness-proof.json \
+  --signed-readiness .local/evidence-run-001/host-001-readiness-proof.json \
+  --session .local/evidence-run-001/session.json \
+  --manifest .local/evidence-run-001/manifest.json \
+  --pins .local/pins.json \
+  --collector-key .local/collector-private.pem \
+  --receipt .local/evidence-run-001/preflight-checkpoint.json
+```
+
+An independently enrolled evaluator verifies the receipt with exactly the same
+arguments except `verify` instead of `sign` and
+`--collector-key .local/collector-public.pem`. The verifier still checks the
+original signed readiness reports. The checkpoint signs what the collector
+*claims* it observed; the timestamp is not anchored in a trusted timestamping
+service and can be backdated by a dishonest collector.
+
+To make this verification **mandatory** in the final merge example above, add:
+
+```sh
+  --preflight-checkpoint .local/evidence-run-001/preflight-checkpoint.json \
+  --collector-public-key .local/collector-public.pem
+```
+
+Add these options before `--output` in the actual `distributed_merge.py`
+command. If either option is missing or invalid, the global verdict fails.
+This is an opt-in additional integrity gate, not a claim of real remote
+multi-host acceptance, verified CPU placement or exactly-once provider effects.
+
 ## 4. Run actual JVM producers at the shared start barrier
 
 On each host, set `DEROYQUE_SIM_WRITE_TOKEN` **locally**, with appropriate

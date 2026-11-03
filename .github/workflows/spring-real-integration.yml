@@ -233,6 +233,7 @@ jobs:
           python3 -m unittest discover -s simulator/tests -p 'test_collector_*.py' -v
           python3 -m unittest discover -s simulator/tests -p 'test_host_readiness_signature.py' -v
           python3 -m unittest discover -s simulator/tests -p 'test_readiness_handoff.py' -v
+          python3 -m unittest discover -s simulator/tests -p 'test_readiness_checkpoint.py' -v
 
   source-archive:
     runs-on: ubuntu-latest

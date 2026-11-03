@@ -278,6 +278,17 @@ matrix to reject their common kernel fingerprint, avoiding false physical-host
 claims. These preparations are not yet a real multi-host trial. See
 `docs/MILESTONE-114.md` and `docs/MILESTONE-115.md`.
 
+## Milestones 139–146 — Evaluator-pinned collector checkpoint of preflight
+
+A separate Ed25519 collector key can now sign the **exact saved and independently
+reproduced signed preflight**. During the final global merge, an evaluator may
+require the matching detached checkpoint and an independently enrolled collector
+public key, on top of all host signatures and the two-phase handoff. Adversarial
+tests reject tampered bytes, policy and challenge substitutions, swapped keys,
+missing inputs and unsafe files. This authenticates the collector's historical
+*claim*, not its actual timestamp, physical host ownership or external effects.
+See `docs/MILESTONE-139.md` through `docs/MILESTONE-146.md`.
+
 ## Milestones 131–138 — Reverified signed preflight-to-completion handoff
 
 The final global merger can now opt in to a **two-phase provenance audit**. It

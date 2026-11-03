@@ -18,10 +18,8 @@ _POSTRUN='ALL_PINNED_SIGNING_KEYS_VERIFIED_NOT_HOST_ATTESTATION'
 _TIMING='BOUNDED_SELF_REPORTED_TIMES_UNVERIFIED'
 
 
-def verify_handoff(preflight_path, report_paths, proof_paths, manifest, pins, session, postrun, postrun_snapshots):
-    """Only a complete, byte-for-byte independently reproducible verdict qualifies."""
-    if not isinstance(postrun,dict) or postrun.get('status')!=_POSTRUN:
-        raise ValueError('Post-run pinned signed host evidence must verify first')
+def reproduce_preflight(preflight_path, report_paths, proof_paths, manifest, pins, session):
+    """Require a strict, fully signed preflight reproducible at its recorded time."""
     session_hash=validate(session,manifest,pins)
     stored=_strict_document(_read_regular(preflight_path,2*1024*1024)[0])
     if not isinstance(stored,dict) or stored.get('status')!='APPARENT_READY_DISTINCT_KERNEL_REPORTS_UNVERIFIED':
@@ -44,6 +42,16 @@ def verify_handoff(preflight_path, report_paths, proof_paths, manifest, pins, se
                      signed_readiness_paths=proof_paths,session=session,pins=pins)
     if reproduced!=stored:
         raise ValueError('Preflight verdict disagrees with independently reverified exact inputs')
+    return stored
+
+
+def verify_handoff(preflight_path, report_paths, proof_paths, manifest, pins, session, postrun, postrun_snapshots):
+    """Only a complete, byte-for-byte independently reproducible verdict qualifies."""
+    if not isinstance(postrun,dict) or postrun.get('status')!=_POSTRUN:
+        raise ValueError('Post-run pinned signed host evidence must verify first')
+    session_hash=validate(session,manifest,pins)
+    stored=reproduce_preflight(preflight_path,report_paths,proof_paths,manifest,pins,session)
+    saved_signed=stored['signed_readiness']
     signed_shards=saved_signed['verified_shards']
     postrun_shards=postrun.get('shards')
     n=manifest.get('shards')
