@@ -35,6 +35,10 @@ def verify_launch(manifest, shard_summaries):
         return ['Launch manifest lacks explicit workload plan']
     plan = m['launch_plan']
     try:
+        # Reject self-consistent but forged/contradictory v2 manifests, not
+        # just differences between summaries and the supplied manifest.
+        from launch_contract import replay_manifest
+        replay_manifest(m)
         count = m['shards']
         jvms = m['jvms_per_host']
         if type(count) is not int or not (2 <= count <= 256) or type(jvms) is not list or len(jvms) != count:
@@ -85,20 +89,23 @@ def verify_launch_scripts(folder):
     manifest = _json(d / 'manifest.json')
     if not isinstance(manifest, dict) or manifest.get('schema_version') != 2:
         return ['Launch manifest v2 required']
-    files = manifest.get('launch_sha256')
-    if not isinstance(files, dict) or len(files) != manifest.get('shards'):
-        return ['Launcher checksum coverage mismatch']
+    try:
+        from launch_contract import replay_manifest
+        from host_readiness import _read_launcher_snapshot
+        canonical = replay_manifest(manifest)
+    except (KeyError, ValueError, TypeError, OverflowError) as exc:
+        return [f'Invalid canonical launch plan: {exc}']
     errors = []
-    for name, expected in files.items():
-        if not isinstance(name, str) or not re.fullmatch(r'launch-host-[0-9]{3}\.sh', name):
-            errors.append('Unexpected launcher filename')
-            continue
+    for name, expected_bytes in canonical.items():
         p = d / name
-        if p.is_symlink() or not p.is_file() or not isinstance(expected, str) or not _HEX.fullmatch(expected):
-            errors.append(f'Unsafe or missing launcher: {name}')
-        elif _sha(p) != expected:
-            errors.append(f'Launcher changed since preparation: {name}')
-    if {p.name for p in d.glob('launch-host-*.sh')} != set(files):
+        try:
+            actual = _read_launcher_snapshot(p)
+        except (OSError, ValueError) as exc:
+            errors.append(f'Unsafe or missing launcher: {name}: {exc}')
+            continue
+        if actual != expected_bytes:
+            errors.append(f'Launcher differs from canonical generated plan: {name}')
+    if {p.name for p in d.glob('launch-host-*.sh')} != set(canonical):
         errors.append('Missing or unexpected launcher')
     return errors
 

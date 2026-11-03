@@ -4,11 +4,32 @@
 
 This repository contains the **actual experimental source code**, not the older documentation-only preview. The three primary deliverables are the asynchronous activation service, an independent HTTP provider simulator, and a configurable multi-JVM incoming-transaction simulator. They are developed as one evolving system.
 
-**Last independently verified remote baseline (2 November 2026, M80):**
-15/15 GitHub Actions jobs passed on commit `6aa9a2e`, including real Spring,
-PostgreSQL, RabbitMQ and SQLite integration. See [CI run 41537422940](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41537422940).
-The opt-in M81–M92 collector additions require their own new CI approval before
-being considered verified remotely.
+**Last independently verified remote baseline (3 November 2026, M162):**
+GitHub Actions completed successfully for commit
+[`b9c69d2`](https://github.com/renbtg-cloud/demo-actv-dryqe/commit/b9c69d2b3e58b71fe028a14308aca09593691c26),
+including real Spring/PostgreSQL/RabbitMQ/SQLite integration and independent
+simulator checks. [CI run 41673503037](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41673503037).
+Later milestones require a separate successful remote run before their CI
+acceptance can be asserted.
+
+## Milestones 163–170 — Replayed launch contracts, not arbitrary checksum pairs
+
+The multi-host launch-plan verifier and real Linux host preflight now replay
+**exact generator semantics** before accepting a v2 manifest or assigned
+launcher. A manifest can no longer silently declare a different endpoint,
+run ID, JVM allocation, rate or start barrier while retaining an old script.
+Nor does simply changing an arbitrary launcher and updating its manifest SHA-256
+make it a valid generated plan. All shard filenames and checksums are checked
+against the generator's exact inventory, and offline script inspection uses
+bounded no-follow, descriptor-pinned snapshots.
+
+The replay supports the historical v2 generator's use of either integer-typed
+CLI defaults or explicitly parsed floating-point values in shell arguments,
+without rewriting previous signed evidence. See `docs/MILESTONE-163.md`
+through `docs/MILESTONE-170.md` and `simulator/tests/test_launch_contract.py`.
+**This is consistency verification, not independent authentication of the
+collector-held manifest, physical host attestation or a claim that launching
+an arbitrary shell script is safe.** Remote CI acceptance is pending.
 
 ## Milestones 84–92 — Collector-challenged host proofs and signed verdict receipts
 
@@ -277,20 +298,6 @@ re-verification and an auditable global verdict. The CI also executes two
 matrix to reject their common kernel fingerprint, avoiding false physical-host
 claims. These preparations are not yet a real multi-host trial. See
 `docs/MILESTONE-114.md` and `docs/MILESTONE-115.md`.
-
-## Milestones 155–162 — Contract-aligned, atomic multi-host launch plans
-
-The independent multi-host launcher now validates workload arguments using the
-same deterministic profile rules as its real execution engine, rejects nonfinite
-inputs even in inactive settings, shares the strengthened preflight URL contract,
-and bounds per-JVM resources and launch time. Prepared launchers/manifest are
-written as a private complete staging directory and atomically published on
-Linux with `renameat2(RENAME_NOREPLACE)`, never replacing a prior plan. A
-standalone atomic publisher avoids importing cryptographic collector dependencies
-into the launcher. Adversarial tests race **six real CLI processes** and reject
-partial, symlinked, malformed and invalid-workload publication. These controls
-do **not** demonstrate independently hosted execution. See
-`docs/MILESTONE-155.md` through `docs/MILESTONE-162.md` and the operator protocol.
 
 ## Milestones 147–154 — Safer Linux producer-host preflight boundaries
 

@@ -298,6 +298,7 @@ jobs:
         run: |
           python3 -m unittest discover -s simulator/tests -p 'test_host_readiness.py' -v
           python3 -m unittest discover -s simulator/tests -p 'test_host_readiness_boundary.py' -v
+          python3 -m unittest discover -s simulator/tests -p 'test_launch_contract.py' -v
           python3 -m unittest discover -s simulator/tests -p 'test_host_matrix.py' -v
           python3 -m unittest discover -s simulator/tests -p 'test_host_matrix_hardening.py' -v
 

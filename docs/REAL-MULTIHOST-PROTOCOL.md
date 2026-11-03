@@ -44,6 +44,23 @@ The resulting directory contains `manifest.json` and `launch-host-000.sh` /
 If the barrier expires during preparation, **create a fresh run plan and
 signing session**; do not edit the timestamp in either file.
 
+### Launch-plan consistency gate (M163–M170)
+
+For a generated plan, `simulator/distributed_integrity.py` verifies the exact
+canonical script contents, not merely the file hashes. The producer's
+`host_readiness.py` independently replays the manifest and verifies its own
+assigned script before any optional network probe or Java runtime query.
+Changing the manifest or launchers after generation, **even while updating
+checksums**, is not a supported repair. Recreate a fresh plan and signing
+session instead. Legacy numeric CLI spellings (`60` and `60.0`) remain valid
+when produced by the v2 generator; they are not a bypass for arbitrary shell.
+
+**Scope:** this detects contradictory or maliciously substituted scripts in
+operator-supplied materials. It does not establish that the manifest came from
+a trustworthy collector; enrollment, authentic distribution, key custody,
+physical host independence and the correctness of downloaded source remain
+separate operator responsibilities.
+
 ## 2. Generate and pin host signing keys
 
 On each host, in a private directory:

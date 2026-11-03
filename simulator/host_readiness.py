@@ -134,9 +134,12 @@ def check(manifest, shard, launcher, *, now_ms=None, min_free_mib=128,
     expected=f'launch-host-{shard:03d}.sh'
     if script.name!=expected:
         raise ValueError('Missing or unsafe assigned launcher')
-    launcher_digest=hashlib.sha256(_read_launcher_snapshot(script)).hexdigest()
-    index=manifest.get('launch_sha256')
-    if not isinstance(index,dict) or index.get(expected)!=launcher_digest:
+    from launch_contract import replay_manifest
+    canonical=replay_manifest(manifest)
+    actual_launcher=_read_launcher_snapshot(script)
+    launcher_digest=hashlib.sha256(actual_launcher).hexdigest()
+    index=manifest['launch_sha256']
+    if index[expected]!=launcher_digest or actual_launcher!=canonical[expected]:
         raise ValueError('Assigned launcher differs from collector plan')
     count=manifest.get('jvms_per_host')
     if not isinstance(count,list) or len(count)!=n or type(count[shard]) is not int or not 1<=count[shard]<=256:
