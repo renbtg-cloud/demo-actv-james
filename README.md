@@ -278,6 +278,19 @@ matrix to reject their common kernel fingerprint, avoiding false physical-host
 claims. These preparations are not yet a real multi-host trial. See
 `docs/MILESTONE-114.md` and `docs/MILESTONE-115.md`.
 
+## Milestones 147–154 — Safer Linux producer-host preflight boundaries
+
+The preflight now snapshots launchers through bounded, nonblocking no-symlink
+regular-file descriptors, detects metadata changes during reading, publishes
+owner-only results atomically without replacement even under competing CLI
+processes, and validates target URLs before any optional network probe. Plain
+HTTP may reach only verified loopback destinations; alias resolution is pinned
+to a numeric loopback address rather than trusted on name alone. A dedicated
+adversarial suite exercises FIFO/symlink/overwrite/DNS-misdirection failures.
+This is local software hardening, **not independent physical host attestation**.
+See `docs/MILESTONE-147.md` through `docs/MILESTONE-154.md`, and
+`docs/REAL-MULTIHOST-PROTOCOL.md`.
+
 ## Milestones 139–146 — Evaluator-pinned collector checkpoint of preflight
 
 A separate Ed25519 collector key can now sign the **exact saved and independently

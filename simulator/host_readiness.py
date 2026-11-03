@@ -8,11 +8,13 @@ No network connections unless --check-network is explicitly requested.
 """
 import argparse
 import hashlib
+import ipaddress
 import json
 import os
 import pathlib
 import re
 import socket
+import stat
 import ssl
 import subprocess
 import sys
@@ -20,6 +22,34 @@ import time
 import urllib.parse
 from host_provenance import snapshot
 from host_session import read_json, digest
+
+
+_MAX_LAUNCHER_BYTES=64*1024
+
+
+def _read_launcher_snapshot(path):
+    """Read one bounded regular launcher via a pinned descriptor, without symlinks.
+
+    Detect obvious concurrent rewrites. This is *not* filesystem-level
+    immutability, trusted host identity, or a guarantee against an attacker
+    controlling the parent directory. The launcher must stay operator-controlled.
+    """
+    flags=(os.O_RDONLY | getattr(os,'O_NOFOLLOW',0) |
+           getattr(os,'O_NONBLOCK',0) | getattr(os,'O_CLOEXEC',0))
+    fd=os.open(path,flags)
+    try:
+        before=os.fstat(fd)
+        if not stat.S_ISREG(before.st_mode) or not 0<before.st_size<=_MAX_LAUNCHER_BYTES:
+            raise ValueError('Unsafe or oversized assigned launcher')
+        with os.fdopen(os.dup(fd),'rb') as source:
+            contents=source.read(_MAX_LAUNCHER_BYTES+1)
+        after=os.fstat(fd)
+        identity=lambda item: (item.st_dev,item.st_ino,item.st_size,item.st_mtime_ns,item.st_ctime_ns)
+        if len(contents)!=before.st_size or len(contents)>_MAX_LAUNCHER_BYTES or identity(before)!=identity(after):
+            raise ValueError('Assigned launcher changed during snapshot')
+        return contents
+    finally:
+        os.close(fd)
 
 
 def _java_version(binary='java'):
@@ -35,22 +65,56 @@ def _java_version(binary='java'):
     return major
 
 
-def _dial(url, timeout):
-    parsed=urllib.parse.urlsplit(url)
-    host=parsed.hostname
-    if (parsed.scheme not in ('https','http') or not host or parsed.username or parsed.password or
-        parsed.path not in ('','/') or parsed.query or parsed.fragment):
+def _parse_preflight_target(url):
+    """Reject ambiguous remote endpoints before any network side effect.
+
+    This is a TLS/loopback *setup* check, never API authentication or host
+    ownership verification. Plaintext outside literal loopback/localhost fails.
+    """
+    if not isinstance(url,str):
+        raise ValueError('Missing target URL')
+    try:
+        parsed=urllib.parse.urlsplit(url)
+        host=parsed.hostname
+        port=parsed.port  # Force validation of malformed/out-of-range ports.
+    except ValueError as exc:
+        raise ValueError('Malformed preflight target URL') from exc
+    if (parsed.scheme not in ('https','http') or not host or
+        parsed.username or parsed.password or parsed.path not in ('','/') or
+        parsed.query or parsed.fragment or not parsed.netloc or
+        '@' in parsed.netloc or '%' in parsed.netloc or
+        any(c.isspace() for c in url)):
         raise ValueError('Unsafe API URL for preflight')
-    if parsed.scheme=='http' and host not in ('127.0.0.1','localhost','::1'):
+    try:
+        addr=ipaddress.ip_address(host)
+    except ValueError:
+        addr=None
+    if parsed.scheme=='http' and not ((addr is not None and addr.is_loopback) or host=='localhost'):
         raise ValueError('Do not use plaintext off-loopback')
-    port=parsed.port or (443 if parsed.scheme=='https' else 80)
+    if port==0:
+        raise ValueError('Invalid preflight target port')
+    return parsed,host,port if port is not None else (443 if parsed.scheme=='https' else 80)
+
+
+def _dial(url,timeout):
+    parsed,host,port=_parse_preflight_target(url)
+    if parsed.scheme=='http':
+        # Do not trust local aliases to resolve only to loopback without
+        # checking *every* result; connect to the pinned numeric result rather
+        # than doing a second, potentially different DNS resolution.
+        candidates=socket.getaddrinfo(host,port,type=socket.SOCK_STREAM)
+        if not candidates or any(not ipaddress.ip_address(c[4][0]).is_loopback for c in candidates):
+            raise ValueError('Plaintext target resolved outside loopback')
+        # socket.create_connection expects (host,port), and using a numeric
+        # loopback address prevents rebinding between lookup and connection.
+        selected=candidates[0][4][0]
+        with socket.create_connection((selected,port),timeout=timeout):
+            return 'LOOPBACK_TCP_CONNECTED_NO_APPLICATION_AUTH'
     with socket.create_connection((host,port),timeout=timeout) as sock:
-        if parsed.scheme=='https':
-            with ssl.create_default_context().wrap_socket(sock,server_hostname=host) as secured:
-                tls=secured.version()
-                if not tls:raise ValueError('TLS handshake missing')
-                return 'TLS_CERTIFICATE_VALIDATED'
-        return 'LOOPBACK_TCP_CONNECTED_NO_APPLICATION_AUTH'
+        with ssl.create_default_context().wrap_socket(sock,server_hostname=host) as secured:
+            if not secured.version():
+                raise ValueError('TLS handshake missing')
+            return 'TLS_CERTIFICATE_VALIDATED'
 
 
 def check(manifest, shard, launcher, *, now_ms=None, min_free_mib=128,
@@ -68,9 +132,9 @@ def check(manifest, shard, launcher, *, now_ms=None, min_free_mib=128,
     if sys.version_info < (3,12):raise ValueError('Requires Python 3.12 or newer')
     script=pathlib.Path(launcher)
     expected=f'launch-host-{shard:03d}.sh'
-    if script.name!=expected or script.is_symlink() or not script.is_file() or script.stat().st_size>64*1024:
+    if script.name!=expected:
         raise ValueError('Missing or unsafe assigned launcher')
-    launcher_digest=hashlib.sha256(script.read_bytes()).hexdigest()
+    launcher_digest=hashlib.sha256(_read_launcher_snapshot(script)).hexdigest()
     index=manifest.get('launch_sha256')
     if not isinstance(index,dict) or index.get(expected)!=launcher_digest:
         raise ValueError('Assigned launcher differs from collector plan')
@@ -107,12 +171,7 @@ def check(manifest, shard, launcher, *, now_ms=None, min_free_mib=128,
     if memory_bytes is not None and configured_heap_bytes>memory_bytes:
         raise ValueError('Sum of configured JVM heaps exceeds cgroup memory limit')
     target=manifest.get('target_url')
-    if not isinstance(target,str):raise ValueError('Missing target URL')
-    parse=urllib.parse.urlsplit(target)
-    if (parse.scheme not in ('http','https') or not parse.hostname or parse.username or
-        parse.password or parse.query or parse.fragment or parse.path not in ('','/') or
-        parse.scheme=='http' and parse.hostname not in ('127.0.0.1','localhost','::1')):
-        raise ValueError('Unsafe API base URL')
+    _parse_preflight_target(target)
     network='NOT_PROBED'
     if check_network:network=_dial(target,network_timeout)
     return {'schema_version':2,'run_id':manifest['run_id'],
@@ -142,9 +201,10 @@ def main(argv=None):
                      min_free_mib=a.min_free_mib,check_network=a.check_network,
                      network_timeout=a.network_timeout)
         if a.output is not None:
-            with a.output.open('x',encoding='utf-8') as out:
-                os.fchmod(out.fileno(),0o600)
-                json.dump(result,out,sort_keys=True,indent=2);out.write('\n')
+            # Same atomic owner-only, no-overwrite publication contract as the
+            # independent collector verdict. No world-readable creation window.
+            from host_matrix import _publish_verdict
+            _publish_verdict(a.output,result)
         print('HOST_PREFLIGHT_SELF_REPORTED_OK',json.dumps(result,sort_keys=True))
         return 0
     except (ValueError,OSError,TypeError,KeyError,subprocess.TimeoutExpired) as exc:

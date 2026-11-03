@@ -373,3 +373,36 @@ public evidence.
 **Fail closed:** if readiness, signing, transport hashes, original ZIP
 reverification, signed reconciliation or database/provider consistency disagree,
 report the mismatch as a failed or inconclusive run, not as a successful result.
+
+## M147–M154 — Local preflight I/O and network boundaries
+
+The producer-host preflight reads its generated launcher through a pinned,
+nonblocking file descriptor with `O_NOFOLLOW`, requires a nonempty regular file
+of at most 64 KiB, and checks stable descriptor metadata across the bounded
+read before comparing the hash with the trusted launch manifest. This detects
+common symlink/FIFO/size/mutation attacks; **it does not secure an adversary-
+controlled parent directory or freeze the file after the check**. Operators must
+keep launch directories under their control.
+
+Successful readiness output is published via same-directory, fsynced, owner-
+only temporary file and atomic nonreplacing hard link (same mechanism as the
+collector verdict). A preexisting file or symlink is never overwritten.
+Concurrent CLI attempts to publish to one path result in one successful writer.
+A crash before publication may leave an untrusted temporary file; clean it
+only after checking no active writers.
+
+URL validation rejects malformed ports, credential-bearing URLs, queries,
+fragments and paths outside the preflight contract. Plain HTTP is permitted
+only to an IP loopback address or `localhost`. The live HTTP preflight checks
+*all* resolved addresses are loopback and connects via the selected **numeric**
+address, preventing a second DNS lookup from silently changing the destination.
+HTTPS checks standard certificate validation; a successful TLS handshake is
+**not** API authorization. Network probing remains strictly opt-in. No bearer
+token or application request is transmitted by preflight.
+
+Adversarial tests in `test_host_readiness_boundary.py` exercise real Linux
+FIFOs, symlinks, six independent competing CLI processes, umask zero, DNS
+redirection, malformed URLs and default no-network behavior. CI gates the suite
+under `linux-host-readiness-contracts`. This remains a **single-host test**;
+it establishes neither independent-machine operation nor trusted physical
+attestation.
