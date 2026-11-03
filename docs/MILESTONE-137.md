@@ -1,0 +1,3 @@
+# Milestone 137 — Real signatures and adversarial two-phase regression in CI
+
+`simulator/tests/test_readiness_handoff.py` builds two genuine Ed25519 producer identities, signs modified real fixture shard summaries and fresh readiness reports, and checks a complete CLI round trip. Negative cases include changed verdict fields, backdated or invalid policy, altered report bytes/signatures, post-run kernel contradiction after a genuine re-sign, missing proofs, wrong session, forbidden symlinks and swapped input order. The collector signing CI job runs these tests. CI completion, not a locally optimistic test count, determines remote acceptance.

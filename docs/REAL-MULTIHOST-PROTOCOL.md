@@ -182,6 +182,44 @@ an authenticated SSH tunnel to the same trusted UTC reference, then attach
 complete clock reports to signed host envelopes. Unsigned wall-clock values in
 readiness reports are not sufficient for global throughput inference.
 
+### Preserve signed preflight for later independent re-verification (M131–M138)
+
+The collector must retain the unmodified `signed-readiness-matrix.json`, exact
+preflight readiness JSONs, detached per-host Ed25519 readiness proofs, its own
+manifest, session, and host pin enrollment. The matrix preserves its declared
+collector-check time and policy budgets, so a post-run verifier can reproduce
+its *historical claim* even after the launch barrier has elapsed.
+
+At the end of step 7, additionally supply the saved preflight documents:
+
+```sh
+python3 simulator/distributed_merge.py \
+  --launch-manifest .local/evidence-run-001/manifest.json \
+  --host-pins .local/pins.json \
+  --host-session .local/evidence-run-001/session.json \
+  --signed-host-report .local/evidence-run-001/host-000-signed.json \
+  --signed-host-report .local/evidence-run-001/host-001-signed.json \
+  --readiness-matrix .local/evidence-run-001/signed-readiness-matrix.json \
+  --readiness-report .local/evidence-run-001/host-000-readiness.json \
+  --readiness-report .local/evidence-run-001/host-001-readiness.json \
+  --signed-readiness .local/evidence-run-001/host-000-readiness-proof.json \
+  --signed-readiness .local/evidence-run-001/host-001-readiness-proof.json \
+  --require-distinct-kernels \
+  --output .local/evidence-run-001/two-phase-final-verdict.json \
+  simulator/results/evidence-run-001-host-000 \
+  simulator/results/evidence-run-001-host-001
+```
+
+For the offline ZIP importer, pass the **corresponding independently verified
+shard folders** instead of the original `simulator/results/...` paths. The
+post-run summaries must preserve the same run-salted `kernel_fingerprint` as
+preflight, and the signed host reports must refer to those exact shard bytes.
+This command does **not** include separate `--verify-state` credentials or
+external provider/database evidence; the full acceptance process must still
+perform those checks as described in step 7. Signing and checking locally
+reported data cannot authenticate when a remote host really ran, or what its
+hardware, clock or administrative control actually was.
+
 ## 4. Run actual JVM producers at the shared start barrier
 
 On each host, set `DEROYQUE_SIM_WRITE_TOKEN` **locally**, with appropriate

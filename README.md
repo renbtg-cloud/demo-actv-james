@@ -278,6 +278,18 @@ matrix to reject their common kernel fingerprint, avoiding false physical-host
 claims. These preparations are not yet a real multi-host trial. See
 `docs/MILESTONE-114.md` and `docs/MILESTONE-115.md`.
 
+## Milestones 131–138 — Reverified signed preflight-to-completion handoff
+
+The final global merger can now opt in to a **two-phase provenance audit**. It
+reproduces the collector's preserved signed readiness verdict against the exact
+original host reports, signatures, recorded temporal budgets and enrolled
+session, then checks that the post-run Ed25519-signed shards have the **same
+assigned host IDs, signing session and reported kernel fingerprints**. Missing
+inputs, conflicting time claims and any substituted data cause global `FAIL`.
+This is not physical attestation, a trustworthy historical timestamp, or a
+substitute for independent database/provider consistency evidence. See
+`docs/MILESTONE-131.md` through `docs/MILESTONE-138.md`.
+
 ## Milestones 123–130 — Collector-bound signed preflight (opt-in)
 
 Real per-host Ed25519 signatures now bind the **exact readiness-report bytes** to

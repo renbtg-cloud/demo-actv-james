@@ -102,7 +102,7 @@ def audit_service_snapshots(sources, run_id, records, statuses):
     return result, []
 
 
-def merge(folders,verify_state=False,await_done_seconds=0,timeout_ms=8000,token=None,server_metrics=None,require_distinct_kernels=False,gateway_witness=None,launch_manifest=None,evidence_index=None,clock_evidence=None,max_clock_width_ms=100,host_pins=None,signed_host_reports=None,host_session=None,signed_clock_reports=None):
+def merge(folders,verify_state=False,await_done_seconds=0,timeout_ms=8000,token=None,server_metrics=None,require_distinct_kernels=False,gateway_witness=None,launch_manifest=None,evidence_index=None,clock_evidence=None,max_clock_width_ms=100,host_pins=None,signed_host_reports=None,host_session=None,signed_clock_reports=None,readiness_matrix=None,readiness_reports=None,signed_readiness=None):
     if not folders:raise ValueError('Supply every shard output directory')
     # Input order is not a host identifier. Canonicalize before reading per-host
     # records, provenance or positional evidence digests.
@@ -256,6 +256,23 @@ def merge(folders,verify_state=False,await_done_seconds=0,timeout_ms=8000,token=
             errors.extend('signed host evidence: '+err for err in signature_errors)
         except (ValueError,TypeError,KeyError,OSError,json.JSONDecodeError) as exc:
             errors.append('signed host evidence: '+str(exc))
+    readiness_handoff = None
+    if any(v is not None for v in (readiness_matrix,readiness_reports,signed_readiness)):
+        if any(v is None for v in (readiness_matrix,readiness_reports,signed_readiness,
+                                   launch_manifest,host_pins,host_session,signed_host_reports)):
+            errors.append('readiness handoff requires COMPLETE preflight and signed post-run inputs')
+        else:
+            try:
+                from readiness_handoff import verify_handoff
+                from host_session import read_json
+                preflight_manifest=read_json(launch_manifest,2*1024*1024) if isinstance(launch_manifest,(str,pathlib.Path)) else launch_manifest
+                pinned=read_json(host_pins) if isinstance(host_pins,(str,pathlib.Path)) else host_pins
+                signing_session=read_json(host_session) if isinstance(host_session,(str,pathlib.Path)) else host_session
+                readiness_handoff=verify_handoff(readiness_matrix,readiness_reports,signed_readiness,
+                                                   preflight_manifest,pinned,signing_session,
+                                                   signed_host_report,host_snapshots)
+            except (ValueError,TypeError,KeyError,OSError,UnicodeError,json.JSONDecodeError) as exc:
+                errors.append('signed readiness handoff: '+str(exc))
     # Stable workload identity across repetitions (exclude absolute UTC launch barrier).
     # This does not by itself prove identical hardware or runtime configuration.
     workload_spec={k:plan.get(k) for k in PLAN_FIELDS if k!='start_at_ms'}
@@ -275,6 +292,7 @@ def merge(folders,verify_state=False,await_done_seconds=0,timeout_ms=8000,token=
         'per_shard':sorted(chunks,key=lambda c:c['shard']),
         'host_evidence':host_evidence, 'clock_evidence':clock_report,
         'signed_host_evidence':signed_host_report,
+        'readiness_handoff':readiness_handoff,
         'global_throughput_qps':(gateway_report['gateway_completed_post_qps'] if gateway_report else
                                 server_report['server_post_qps'] if server_report else None),
         'gateway_witness':gateway_report,
@@ -323,6 +341,9 @@ def main(argv=None):
     parser.add_argument('--signed-clock-report',action='append',type=pathlib.Path,help='Optional per-shard clock probe bound to Ed25519 report; requires host session')
     parser.add_argument('--require-host-session',action='store_true',help='Refuse reports without collector session, launch manifest and pinned keys')
     parser.add_argument('--require-host-signatures',action='store_true',help='Fail closed unless signed reports and a pinned public-key inventory were supplied')
+    parser.add_argument('--readiness-matrix',type=pathlib.Path,help='Trusted collector-saved signed preflight verdict; requires exact reports, proofs and postrun host signatures')
+    parser.add_argument('--readiness-report',type=pathlib.Path,action='append',help='One unchanged preflight JSON per assigned host')
+    parser.add_argument('--signed-readiness',type=pathlib.Path,action='append',help='One session-bound Ed25519 preflight proof per host')
     parser.add_argument('--strict-external-preflight',action='store_true',help='Require separate collector manifest, sealed shard index, bounded clock evidence and distinct reported kernels; NOT host authentication')
     p=parser.parse_args(argv)
     import os
@@ -339,7 +360,7 @@ def main(argv=None):
                                    p.host_pins is None or p.signed_host_report is None):
         print('COLLECTOR_SESSION_PREFLIGHT_FAILED: session, manifest, pins and signed reports required',file=sys.stderr)
         return 2
-    try:r=merge(p.folders,p.verify_state,p.await_done_seconds,token=os.environ.get('DEROYQUE_SIM_READ_TOKEN'),server_metrics=p.server_metrics,require_distinct_kernels=p.require_distinct_kernels,gateway_witness=p.gateway_witness,launch_manifest=p.launch_manifest,evidence_index=p.evidence_index,clock_evidence=p.clock_evidence,max_clock_width_ms=p.max_clock_width_ms,host_pins=p.host_pins,signed_host_reports=p.signed_host_report,host_session=p.host_session,signed_clock_reports=p.signed_clock_report)
+    try:r=merge(p.folders,p.verify_state,p.await_done_seconds,token=os.environ.get('DEROYQUE_SIM_READ_TOKEN'),server_metrics=p.server_metrics,require_distinct_kernels=p.require_distinct_kernels,gateway_witness=p.gateway_witness,launch_manifest=p.launch_manifest,evidence_index=p.evidence_index,clock_evidence=p.clock_evidence,max_clock_width_ms=p.max_clock_width_ms,host_pins=p.host_pins,signed_host_reports=p.signed_host_report,host_session=p.host_session,signed_clock_reports=p.signed_clock_report,readiness_matrix=p.readiness_matrix,readiness_reports=p.readiness_report,signed_readiness=p.signed_readiness)
     except (ValueError,KeyError,OSError,json.JSONDecodeError) as e:
         print(f'DISTRIBUTED_MERGE_FATAL: {e}',file=sys.stderr);return 2
     if p.output:

@@ -196,6 +196,10 @@ def audit(manifest, reports, *, require_network=False, strict_temporal=False,
         signed_status=verify_proofs(raw_by_shard,signed_readiness_paths,session,manifest,pins)
     return {'status':'APPARENT_READY_DISTINCT_KERNEL_REPORTS_UNVERIFIED',
             'run_id':manifest['run_id'],'shards':n,
+            'network_required':require_network,
+            'collector_checked_at_epoch_ms':now_ms if strict_temporal else None,
+            'temporal_budgets':({'max_age_ms':max_age_ms,'max_future_ms':max_future_ms}
+                                if strict_temporal else None),
             'manifest_sha256':digest(manifest),
             'signed_readiness':signed_status if signed else {'status':'NOT_REQUESTED'},
             'report_commitments':[
