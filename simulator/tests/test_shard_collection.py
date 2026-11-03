@@ -207,10 +207,17 @@ class RealMergeImportedCollectionTests(unittest.TestCase):
         self.fixture=MergeTests('test_complete_global_reconciliation')
         self.fixture.setUp();self.addCleanup(self.fixture.tearDown)
         self.root=self.fixture.root
+        # The end-to-end collector must exercise a *real canonical* launch,
+        # not a synthetic partial manifest that would be rejected in production.
         plan={**PLAN,'heap_max_mb':32,'concurrency_per_jvm':8}
-        self.manifest={'schema_version':2,'run_id':'testm7','target_url':'http://127.0.0.1:18081',
-              'shards':2,'jvms_per_host':[1,1], 'global_posts':12,'shared_keys':4,
-              'start_at_epoch_ms':plan['start_at_ms'], 'launch_plan':plan}
+        parsed=parse_args(['--url','http://127.0.0.1:18081','--shards','2',
+                           '--jvms-per-host','1','--requests','12','--keys','4',
+                           '--rate','40','--distribution','sequential',
+                           '--conflict-percent','100','--run-id','testm7',
+                           '--start-after-seconds','90',
+                           '--output-dir',str(self.root/'unused')])
+        _,self.manifest=build_scripts(parsed,now_ms=PLAN['start_at_ms']-90000)
+        self.assertEqual(self.manifest['launch_plan'],plan)
         self.pins={};self.keys=[]
         for i,folder in enumerate(self.fixture.paths):
             info=json.loads((folder/'summary.json').read_text())
