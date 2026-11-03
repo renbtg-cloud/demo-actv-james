@@ -294,6 +294,7 @@ jobs:
       - name: Verify real Linux producer prerequisite checks and failure cases
         run: |
           python3 -m unittest discover -s simulator/tests -p 'test_host_readiness.py' -v
+          python3 -m unittest discover -s simulator/tests -p 'test_host_matrix.py' -v
 
   offline-collection-hardening-contracts:
     runs-on: ubuntu-latest

@@ -19,7 +19,7 @@ import sys
 import time
 import urllib.parse
 from host_provenance import snapshot
-from host_session import read_json
+from host_session import read_json, digest
 
 
 def _java_version(binary='java'):
@@ -70,9 +70,9 @@ def check(manifest, shard, launcher, *, now_ms=None, min_free_mib=128,
     expected=f'launch-host-{shard:03d}.sh'
     if script.name!=expected or script.is_symlink() or not script.is_file() or script.stat().st_size>64*1024:
         raise ValueError('Missing or unsafe assigned launcher')
-    digest=hashlib.sha256(script.read_bytes()).hexdigest()
+    launcher_digest=hashlib.sha256(script.read_bytes()).hexdigest()
     index=manifest.get('launch_sha256')
-    if not isinstance(index,dict) or index.get(expected)!=digest:
+    if not isinstance(index,dict) or index.get(expected)!=launcher_digest:
         raise ValueError('Assigned launcher differs from collector plan')
     count=manifest.get('jvms_per_host')
     if not isinstance(count,list) or len(count)!=n or type(count[shard]) is not int or not 1<=count[shard]<=256:
@@ -115,8 +115,9 @@ def check(manifest, shard, launcher, *, now_ms=None, min_free_mib=128,
         raise ValueError('Unsafe API base URL')
     network='NOT_PROBED'
     if check_network:network=_dial(target,network_timeout)
-    return {'schema_version':1,'run_id':manifest['run_id'],'shard_index':shard,
-        'launch_script_sha256':digest,'java_major':java,
+    return {'schema_version':2,'run_id':manifest['run_id'],
+        'manifest_sha256':digest(manifest), 'observed_epoch_ms':when, 'shard_index':shard,
+        'launch_script_sha256':launcher_digest,'java_major':java,
         'python_version':'.'.join(map(str,sys.version_info[:3])),
         'assigned_java_processes':count[shard],
         'cpu_affinity_count':affinity,'reported_cgroup_memory_bytes':memory_bytes,

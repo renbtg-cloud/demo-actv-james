@@ -256,6 +256,17 @@ attestation or a demonstration of multi-host execution. The new CI job exercises
 real Java 21 and adversarial local preflight cases. See
 `docs/MILESTONE-106.md` through `docs/MILESTONE-109.md`.
 
+## Milestones 110–113 — Fail-closed multi-host preflight matrix
+
+A separate `simulator/host_matrix.py` auditor requires exact, complete
+shard-indexed producer readiness reports bound to one launch-manifest SHA-256.
+It rejects modified plans, duplicate or absent shards, mismatched JVM/resource
+claims and same-kernel fingerprints. Optional `--require-network` rejects
+unprobed host connections. This stage still processes **untrusted self-reports**:
+synthetic distinct fingerprints and wall-clock readings do not prove real host
+independence. CI includes a real Linux Java subprocess and adversarial CLI
+regressions. See `docs/MILESTONE-110.md` through `docs/MILESTONE-113.md`.
+
 ## Layout
 
 - `core/`: admission and evidence contracts, policy and safe parsing.
