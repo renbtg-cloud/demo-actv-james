@@ -244,6 +244,18 @@ snapshot/reverification tests run in a dedicated CI job. These are bounded
 software-integrity tests, **not real multi-host execution or hardware attestation**.
 See `docs/MILESTONE-100.md` through `docs/MILESTONE-105.md`.
 
+## Milestones 106–109 — Executable preflight on each future Linux producer host
+
+`simulator/host_readiness.py` now checks the actual host-specific launcher against
+the launch manifest, the upcoming start barrier, real Java/Python runtime,
+Linux kernel fingerprint, CPU affinity, disk space and cgroup heap feasibility.
+An optional network probe performs only TCP loopback or certificate-validated
+HTTPS setup; no token or API payload is sent. Results can be written exclusively
+to owner-only JSON and are explicitly **self-reported**, not physical host
+attestation or a demonstration of multi-host execution. The new CI job exercises
+real Java 21 and adversarial local preflight cases. See
+`docs/MILESTONE-106.md` through `docs/MILESTONE-109.md`.
+
 ## Layout
 
 - `core/`: admission and evidence contracts, policy and safe parsing.
