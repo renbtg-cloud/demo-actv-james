@@ -4,13 +4,24 @@
 
 This repository contains the **actual experimental source code**, not the older documentation-only preview. The three primary deliverables are the asynchronous activation service, an independent HTTP provider simulator, and a configurable multi-JVM incoming-transaction simulator. They are developed as one evolving system.
 
-**Last independently verified remote baseline (3 November 2026, M162):**
-GitHub Actions completed successfully for commit
-[`b9c69d2`](https://github.com/renbtg-cloud/demo-actv-dryqe/commit/b9c69d2b3e58b71fe028a14308aca09593691c26),
+**Last independently verified remote baseline (3 November 2026, M171):**
+GitHub Actions completed successfully with **19/19 jobs passed (0 failures)**
+for commit [`0cbf18b`](https://github.com/renbtg-cloud/demo-actv-dryqe/commit/0cbf18be7c920899a3e9c0620fcd7f92a80fbeeb),
 including real Spring/PostgreSQL/RabbitMQ/SQLite integration and independent
-simulator checks. [CI run 41673503037](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41673503037).
-Later milestones require a separate successful remote run before their CI
-acceptance can be asserted.
+simulator and shard-collection contracts.
+[CI run 41678981028](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41678981028).
+This is a laboratory CI baseline, **not** production readiness or independent
+physical-host attestation.
+
+## Milestone 171 — Restore canonical end-to-end collector regression
+
+The offline signed-shard integration fixture previously constructed a partial,
+synthetic launch manifest. After M163–M170 correctly required full canonical
+launch contracts, that legacy test failed in two independent CI jobs. M171 makes
+the fixture use the official launch-plan generator with identical workload
+parameters, **without weakening the manifest validator or production checks**.
+[CI run 41678981028](https://github.com/renbtg-cloud/demo-actv-dryqe/actions/runs/41678981028)
+passed all 19 jobs, including the end-to-end signed-shard collection path.
 
 ## Milestones 163–170 — Replayed launch contracts, not arbitrary checksum pairs
 
@@ -29,7 +40,8 @@ without rewriting previous signed evidence. See `docs/MILESTONE-163.md`
 through `docs/MILESTONE-170.md` and `simulator/tests/test_launch_contract.py`.
 **This is consistency verification, not independent authentication of the
 collector-held manifest, physical host attestation or a claim that launching
-an arbitrary shell script is safe.** Remote CI acceptance is pending.
+an arbitrary shell script is safe.** The canonical-launch checks are included
+in the passing M171 remote CI baseline above.
 
 ## Milestones 84–92 — Collector-challenged host proofs and signed verdict receipts
 
