@@ -108,6 +108,18 @@ python3 simulator/host_matrix.py \
   .local/evidence-run-001/host-001-readiness.json
 ```
 
+For stricter, time-sensitive *preflight* collection, add `--strict-temporal`
+with optional `--max-age-ms 300000 --max-future-ms 10000` to the matrix command.
+These checks compare self-reported readiness timestamps against the collector's
+own clock, require at least 30 seconds remaining before the launch barrier and
+verify the embedded barrier matches the manifest top-level barrier. Failed
+preflights refuse verdict publication. **Do not use this option for late
+post-run archival verification**: it deliberately rejects expired barriers.
+The output now includes canonical SHA-256 commitments for each report and is
+published as an owner-only, immutable result; already existing files are not
+replaced. This is local evidence integrity, not remote host authentication.
+See `docs/MILESTONE-116.md` through `docs/MILESTONE-122.md`.
+
 Only use `--require-network` when both hosts actually performed the probe. A
 successful matrix reports `APPARENT_READY_DISTINCT_KERNEL_REPORTS_UNVERIFIED`.
 Matching fingerprint values reject the independent-host claim; distinct

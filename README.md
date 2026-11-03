@@ -278,6 +278,19 @@ matrix to reject their common kernel fingerprint, avoiding false physical-host
 claims. These preparations are not yet a real multi-host trial. See
 `docs/MILESTONE-114.md` and `docs/MILESTONE-115.md`.
 
+## Milestones 116–122 — Freshness-gated, fail-closed multi-host readiness
+
+The offline readiness matrix now offers `--strict-temporal`: a bounded collector-clock
+plausibility gate for stale/future self-reported preflights, mismatched launch
+barriers and reports arriving too close to launch. The input loader rejects
+ambiguous duplicate JSON keys, non-finite constants, symlink/FIFO tricks and
+oversized files. Successful verdicts bind canonical per-shard SHA-256 commitments
+to the trusted launch manifest, and the CLI publishes only complete, owner-only,
+non-overwriting results. These are **self-report and local-integrity checks**;
+none demonstrates trusted clock synchronization or independent remote hardware.
+See `docs/MILESTONE-116.md` through `docs/MILESTONE-122.md` and the operator
+protocol for scope and limits.
+
 ## Layout
 
 - `core/`: admission and evidence contracts, policy and safe parsing.
