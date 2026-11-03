@@ -267,6 +267,17 @@ synthetic distinct fingerprints and wall-clock readings do not prove real host
 independence. CI includes a real Linux Java subprocess and adversarial CLI
 regressions. See `docs/MILESTONE-110.md` through `docs/MILESTONE-113.md`.
 
+## Milestones 114–115 — Ready-to-execute independent-host protocol and negative rehearsal
+
+`docs/REAL-MULTIHOST-PROTOCOL.md` now provides a concrete operator runbook for
+separately provisioned Linux hosts: bound launch planning, per-host key custody,
+real prerequisites and optional clock/TLS evidence, signed transfer, independent
+re-verification and an auditable global verdict. The CI also executes two
+**separate OS-process preflights** on one host and requires the readiness
+matrix to reject their common kernel fingerprint, avoiding false physical-host
+claims. These preparations are not yet a real multi-host trial. See
+`docs/MILESTONE-114.md` and `docs/MILESTONE-115.md`.
+
 ## Layout
 
 - `core/`: admission and evidence contracts, policy and safe parsing.

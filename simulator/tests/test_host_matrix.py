@@ -77,6 +77,26 @@ class MatrixTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'exactly one'):
             audit(self.manifest,self.reports[:1])
 
+    def test_two_real_separate_cli_preflights_on_one_kernel_must_fail_isolation(self):
+        # Two independent Python OS processes and two real Java-version probes;
+        # this is deliberately NOT a two-machine test.
+        import subprocess
+        (self.root/'manifest.json').write_text(json.dumps(self.manifest))
+        for i in range(2):
+            launcher=self.root/f'launch-host-{i:03d}.sh'
+            report=self.root/f'actual-{i}.json'
+            cmd=[sys.executable,str(SIM/'host_readiness.py'),
+                 '--manifest',str(self.root/'manifest.json'),
+                 '--shard-index',str(i),'--launcher',str(launcher),
+                 '--output',str(report)]
+            child=subprocess.run(cmd,capture_output=True,text=True,timeout=12)
+            self.assertEqual(child.returncode,0,child.stderr)
+        a=json.loads((self.root/'actual-0.json').read_text())
+        b=json.loads((self.root/'actual-1.json').read_text())
+        self.assertEqual(a['kernel_fingerprint'],b['kernel_fingerprint'])
+        with self.assertRaisesRegex(ValueError,'SAME_KERNEL_OBSERVED'):
+            audit(self.manifest,[self.root/'actual-0.json',self.root/'actual-1.json'])
+
     def test_json_input_and_dedicated_cli(self):
         import subprocess
         (self.root/'manifest.json').write_text(json.dumps(self.manifest))
